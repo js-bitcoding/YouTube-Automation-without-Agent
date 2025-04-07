@@ -1,0 +1,49 @@
+venv3.10/
+.env
+tortoise/
+assets/
+action_models/
+__pycache__/
+other/
+edited_output.png
+output_snowy_scene.png
+output.mp3
+test.py
+
+# Virtual Envs
+venv3.10/
+.venv/
+env/
+venv/
+
+# Python Bytecode
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment & Secrets
+.env
+*.env
+
+# Project-specific dirs
+tortoise/
+assets/
+action_models/
+other/
+
+# Output files
+edited_output.png
+output_snowy_scene.png
+output.mp3
+
+# Logs & test stuff
+*.log
+test.py
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# IDE files (VS Code, PyCharm, etc.)
+.vscode/
+.idea/
