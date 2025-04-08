@@ -6,9 +6,9 @@ from database.db_connection import get_db
 from fastapi.responses import JSONResponse
 from database.models import User,UserLoginHistory
 from database.schemas import UserLogin,UserRegister
+from functionality.jwt_token import create_jwt_token
 from fastapi import APIRouter, Depends, HTTPException
 from functionality.current_user import get_current_user
-from functionality.jwt_token import create_jwt_token
 
 
 router = APIRouter()

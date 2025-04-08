@@ -3,25 +3,25 @@ import re
 import wave
 import json
 import uuid
+import torch
+import shutil
 import ollama
 import whisper
 import requests
 import playsound
+import torchaudio
 import subprocess
 from gtts import gTTS
+from uuid import uuid4
+from pathlib import Path
 from pydub import AudioSegment
 import google.generativeai as genai
-from vosk import Model, KaldiRecognizer
-from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
-from youtube_transcript_api import YouTubeTranscriptApi
-import torchaudio
 from tortoise.api import TextToSpeech
-from tortoise.utils.audio import load_voice, load_audio
+from vosk import Model, KaldiRecognizer
 from fastapi import UploadFile, HTTPException, status
-import shutil
-import torch
-from pathlib import Path
-from uuid import uuid4
+from youtube_transcript_api import YouTubeTranscriptApi
+from tortoise.utils.audio import load_voice, load_audio
+from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
 
 GEMINI_API_KEY = GEMINI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
