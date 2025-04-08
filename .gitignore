@@ -9,6 +9,8 @@ edited_output.png
 output_snowy_scene.png
 output.mp3
 test.py
+tmp/
+temp_uploads/
 
 # Virtual Envs
 venv3.10/

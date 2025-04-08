@@ -25,8 +25,6 @@ from uuid import uuid4
 
 GEMINI_API_KEY = GEMINI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
-# VOICE_TONE_DIR = "assets/voice_tones"
-# os.makedirs(VOICE_TONE_DIR, exist_ok=True)
 
 def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casual", style: str = "Casual"):
     print(f"Transcript inside the generate with ollama function :::::::: {transcript}")
@@ -64,17 +62,6 @@ def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casu
         return formatted_script
     else:
         return "Error generating script"
-    
-    # print("Generating Script with the Ollama::::", prompt)
-    # response = ollama.chat(model="llama3.2:1b", messages=[{"role": "user", "content": prompt}])
-    # print(f"Response form Ollama :: {response}")
-    # formatted_script = response["message"]["content"].replace("\n", "\n\n")
-    # return formatted_script if response and "message" in response else "Error generating script"
-
-
-# --------------------------------
-    # response = requests.post("http://localhost:11434/api/generate", json={"model": "llama3.2:1b", "prompt": prompt})
-    # return response.json().get("response", "Error generating script")
 
 def convert_to_wav(input_file: str) -> str:
     file_ext = os.path.splitext(input_file)[-1].lower()
@@ -119,30 +106,6 @@ def transcribe_audio(file_path: str):
             os.remove(wav_file)  # ✅ Now it's safe to delete
 
     return {"transcription": result_text.strip()}
-
-# def transcribe_audio(file_path: str):
-#     # Ensure you have downloaded the Vosk model and set the correct path.
-#     model_path = "action_models/vosk-model-small-en-us-0.15"  # Update this path if needed
-#     if not os.path.exists(model_path):
-#         raise Exception("Please download the Vosk model and place it in the 'models' folder.")
-    
-#     wf = wave.open(file_path, "rb")
-#     if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-#         raise Exception("Audio file must be WAV format mono PCM.")
-    
-#     model = Model(model_path)
-#     rec = KaldiRecognizer(model, wf.getframerate())
-#     result_text = ""
-#     while True:
-#         data = wf.readframes(4000)
-#         if len(data) == 0:
-#             break
-#         if rec.AcceptWaveform(data):
-#             res = json.loads(rec.Result())
-#             result_text += " " + res.get("text", "")
-#     res = json.loads(rec.FinalResult())
-#     result_text += " " + res.get("text", "")
-#     return result_text.strip()
 
 tts_model = TextToSpeech()
 
@@ -373,121 +336,3 @@ def get_user_voice_sample(user_id: int) -> str:
         if os.path.exists(path):
             return path
     return None
-
-
-# def get_video_details_with_cc(query: str, max_results: int = 10):
-#     """
-#     Uses the YouTube Data API to search for videos matching the query.
-#     Filters out videos without closed captions (subtitles).
-#     """
-#     search_url = "https://www.googleapis.com/youtube/v3/search"
-#     search_params = {
-#         "part": "snippet",
-#         "q": query,
-#         "maxResults": max_results,
-#         "key": YOUTUBE_API_KEY,
-#         "type": "video"
-#     }
-
-#     # Step 1: Search for videos
-#     response = requests.get(search_url, params=search_params)
-#     if response.status_code != 200:
-#         return []
-
-#     items = response.json().get("items", [])
-#     video_ids = [item["id"]["videoId"] for item in items if "videoId" in item["id"]]
-
-#     if not video_ids:
-#         return []
-
-#     # Step 2: Fetch video details (including captions availability)
-#     details_url = "https://www.googleapis.com/youtube/v3/videos"
-#     details_params = {
-#         "part": "contentDetails",
-#         "id": ",".join(video_ids),
-#         "key": YOUTUBE_API_KEY
-#     }
-
-#     details_response = requests.get(details_url, params=details_params)
-#     if details_response.status_code != 200:
-#         return []
-
-#     video_details = []
-#     details_items = details_response.json().get("items", [])
-
-#     for item in details_items:
-#         video_id = item["id"]
-#         caption_status = item["contentDetails"].get("caption", "false")  # Check if captions exist
-
-#         if caption_status == "true":  # Only keep videos with captions
-#             video_details.append({
-#                 "video_id": video_id,
-#                 "title": next((v["snippet"]["title"] for v in items if v["id"]["videoId"] == video_id), ""),
-#                 "link": f"https://www.youtube.com/watch?v={video_id}"
-#             })
-
-#     return video_details
-
-
-# import requests
-
-# def get_trending_videos_with_cc(region="US", category_id="0", max_results=10):
-#     """
-#     Fetches trending YouTube videos and filters out videos that don't have closed captions (CC).
-    
-#     Args:
-#     - region (str): Country code (default: "US").
-#     - category_id (str): Video category ID (default: "0" for all categories).
-#     - max_results (int): Number of videos to fetch.
-
-#     Returns:
-#     - List of video details (only with CC).
-#     """
-#     # Step 1: Fetch Trending Videos
-#     trending_url = "https://www.googleapis.com/youtube/v3/videos"
-#     trending_params = {
-#         "part": "snippet",
-#         "chart": "mostPopular",
-#         "regionCode": region,  
-#         "videoCategoryId": category_id,  
-#         "maxResults": max_results * 2,  # Fetch more videos to filter later
-#         "key": YOUTUBE_API_KEY
-#     }
-
-#     trending_response = requests.get(trending_url, params=trending_params)
-#     if trending_response.status_code != 200:
-#         return []
-
-#     trending_items = trending_response.json().get("items", [])
-#     video_ids = [item["id"] for item in trending_items]
-
-#     # Step 2: Fetch Video Details (Check CC Availability)
-#     details_url = "https://www.googleapis.com/youtube/v3/videos"
-#     details_params = {
-#         "part": "contentDetails",
-#         "id": ",".join(video_ids),
-#         "key": YOUTUBE_API_KEY
-#     }
-
-#     details_response = requests.get(details_url, params=details_params)
-#     if details_response.status_code != 200:
-#         return []
-
-#     video_details = []
-#     details_items = details_response.json().get("items", [])
-
-#     for item in details_items:
-#         video_id = item["id"]
-#         caption_status = item["contentDetails"].get("caption", "false")  # Check if captions exist
-
-#         if caption_status == "true":  # ✅ Only keep videos with captions
-#             video_details.append({
-#                 "video_id": video_id,
-#                 "title": next((v["snippet"]["title"] for v in trending_items if v["id"] == video_id), ""),
-#                 "link": f"https://www.youtube.com/watch?v={video_id}"
-#             })
-
-#         if len(video_details) >= max_results:  # Limit to top results
-#             break
-
-#     return video_details
