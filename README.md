@@ -40,3 +40,5 @@ venv\Scripts\activate  # On Windows
 pip install -r requirements.txt
 
 ## add your API keys like YOUTUBE_API_KEY, GEMINI_API_KEY, DATABASE_URL in .env file
+
+## use python version 3.10.0
