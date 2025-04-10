@@ -13,14 +13,14 @@ def fetch_video_thumbnails(keyword):
     }
     
     response = requests.get(YOUTUBE_SEARCH_URL, params=params).json()
-    print("YouTube API Response:", response)  # Debug log
+    print("YouTube API Response:", response)
     videos = []
     
     for item in response.get("items", []):
         video_id = item["id"]["videoId"]
         snippet = item["snippet"]
         
-        if "shorts" not in snippet["title"].lower():  # Exclude Shorts
+        if "shorts" not in snippet["title"].lower():
             videos.append({
                 "video_id": video_id,
                 "title": snippet["title"],

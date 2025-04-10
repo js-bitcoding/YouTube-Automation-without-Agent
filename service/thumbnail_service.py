@@ -22,15 +22,8 @@ API_KEY = GEMINI_API_KEY
 genai.configure(api_key=API_KEY)
 
 MODEL_NAME = "gemini-2.0-flash-exp-image-generation"
-# MODEL_NAME = "imagen-3.0-generate-002"
 
 os.makedirs(THUMBNAIL_STORAGE_PATH, exist_ok=True)
-
-# For emotion detection, we use a simple DNN-based approach with OpenCV.
-# (You can replace this with a more sophisticated method if needed.)
-FACE_PROTO = "action_models/deploy.prototxt"
-FACE_MODEL = "action_models/res10_300x300_ssd_iter_140000.caffemodel"
-face_net = cv2.dnn.readNetFromCaffe(FACE_PROTO, FACE_MODEL)
 
 def detect_faces(image_path):
     img = cv2.imread(image_path)
@@ -61,7 +54,7 @@ def encode_image(image_path):
     """Encodes image as base64 and gets MIME type."""
     mime_type, _ = mimetypes.guess_type(image_path)
     if not mime_type:
-        mime_type = "image/jpeg"  # Default to JPEG if unknown
+        mime_type = "image/jpeg"
 
     with open(image_path, "rb") as img_file:
         return {
@@ -76,22 +69,14 @@ def generate_image_from_input(image_path: str, prompt: str):
     try:
         image_data = encode_image(image_path)
 
-        # Encode image as base64 with MIME type
         image_part = {
             "inline_data": {
-                "mime_type": image_data["mime_type"],  # or "image/jpeg"
+                "mime_type": image_data["mime_type"],
                 "data": image_data["data"]
             }
         }
 
-        # Create model instance
         model = genai.GenerativeModel(MODEL_NAME)
-
-        # Call Gemini API
-        # response = model.generate_content([
-        #     {"role": "user", "parts": [{"inline_data": image_data}]},  # Image as Blob
-        #     {"role": "user", "parts": [{"text": prompt}]}  # Prompt as text
-        # ])
 
         response = model.generate_content(
             [
@@ -104,7 +89,6 @@ def generate_image_from_input(image_path: str, prompt: str):
 
         print("Full Response:", response)
 
-        # Extract the generated image URL or base64 content
         if response and response.candidates:
             for candidate in response.candidates:
                 for part in candidate.content.parts:
@@ -113,7 +97,7 @@ def generate_image_from_input(image_path: str, prompt: str):
                         # return base64.b64encode(part.inline_data.data).decode("utf-8")  # Return base64 image data
 
         print("❌ No image returned in the response.")
-        return None  # Handle case if no image is returned
+        return None
     
     except Exception as e:
         print(f"Error generating image: {e}")
@@ -139,15 +123,13 @@ def store_thumbnails(keyword, current_user: User = Depends(get_current_user)):
         return {"message": "No thumbnails found for this keyword."}
 
     db = SessionLocal()
-    results = []  # Change result to a list instead of a dict
+    results = []
 
     for video in videos:
         filepath = save_thumbnail(video)
         if filepath:
-            # Validate the thumbnail and get analysis details
             validation = validate_thumbnail(filepath)
 
-            # Save analysis results to the database
             thumbnail = Thumbnail(
                 keyword=keyword,
                 video_id=video["video_id"],
@@ -162,7 +144,6 @@ def store_thumbnails(keyword, current_user: User = Depends(get_current_user)):
             )
             db.add(thumbnail)
 
-            # Append structured result
             results.append({
                 "filename": os.path.basename(filepath),
                 "title": video["title"],
@@ -194,18 +175,13 @@ def extract_fonts(image_path):
     return text
 
 def detect_emotions(image_path):
-    # Read the image
     img = cv2.imread(image_path)
-    
-    # Initialize the FER detector (mtcnn=True gives better face detection)
+
     detector = FER(mtcnn=True)
-    
-    # Detect emotions for all faces in the image
+
     results = detector.detect_emotions(img)
     
     if results:
-        # If there are multiple faces, you might average them or choose the one with the highest confidence.
-        # Here, we simply pick the dominant emotion of the first detected face.
         emotions = results[0]["emotions"]
         dominant_emotion = max(emotions, key=emotions.get)
         return dominant_emotion

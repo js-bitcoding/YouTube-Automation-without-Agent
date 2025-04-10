@@ -4,11 +4,8 @@ import wave
 import json
 import uuid
 import torch
-import shutil
-import ollama
 import whisper
 import requests
-import playsound
 import torchaudio
 import subprocess
 from gtts import gTTS
@@ -20,7 +17,7 @@ from tortoise.api import TextToSpeech
 from vosk import Model, KaldiRecognizer
 from fastapi import UploadFile, HTTPException, status
 from youtube_transcript_api import YouTubeTranscriptApi
-from tortoise.utils.audio import load_voice, load_audio
+from tortoise.utils.audio import load_audio
 from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
 
 GEMINI_API_KEY = GEMINI_API_KEY
@@ -55,8 +52,6 @@ def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casu
     response = model.generate_content(prompt)
     print(f"Response form Gemini :: {response}")
 
-
-    # Extract response text
     if response and response.text:
         formatted_script = response.text.replace("\n", "\n\n")
         return formatted_script
@@ -82,7 +77,7 @@ def transcribe_audio(file_path: str):
     wav_file = convert_to_wav(file_path)
 
     try:
-        with wave.open(wav_file, "rb") as wf:  # ✅ Use 'with' to ensure file closes properly
+        with wave.open(wav_file, "rb") as wf:
             if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
                 raise Exception("Audio file must be WAV format mono PCM.")
 
@@ -103,7 +98,7 @@ def transcribe_audio(file_path: str):
 
     finally:
         if os.path.exists(wav_file):
-            os.remove(wav_file)  # ✅ Now it's safe to delete
+            os.remove(wav_file)
 
     return {"transcription": result_text.strip()}
 
@@ -120,11 +115,9 @@ async def handle_voice_tone_upload(file: UploadFile, user_id: int) -> str:
     base_filename = Path(file.filename).stem
     voice_sample_path = Path(VOICE_TONE_DIR) / f"{base_filename}.wav"
 
-    # ✅ If the voice sample already exists, use it
     if voice_sample_path.exists():
         return str(voice_sample_path)
 
-    # Else, process and save the new voice sample
     temp_path = Path(VOICE_TONE_DIR) / f"temp_{user_id}.{ext}"
 
     with open(temp_path, "wb") as f:
@@ -141,11 +134,6 @@ async def handle_voice_tone_upload(file: UploadFile, user_id: int) -> str:
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-    # finally:
-    #     if temp_path.exists():
-    #         temp_path.unlink()
-
 
 MAX_CHARS = 300
 def split_text(text: str, max_length: int = MAX_CHARS):
@@ -177,11 +165,9 @@ def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path
 
         if voice_sample_path and os.path.exists(voice_sample_path):
             print(f"Using custom voice cloning :: {voice_sample_path}")
-            # Load actual voice sample
             try:
                 voice_samples = [load_audio(voice_sample_path, 22050)]
                 conditioning_latents = tts_model.get_conditioning_latents(voice_samples)
-                # voice_samples, conditioning_latents = load_voice(voice_sample_path)
                 print(f"voice_samples: {voice_samples}")
             except Exception as e: 
                 import traceback
@@ -208,7 +194,6 @@ def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path
             return f"/{file_path}"
 
         else:
-            # Use gTTS fallback
             from pydub import AudioSegment
             combined = AudioSegment.empty()
             for chunk in chunks:
@@ -220,11 +205,6 @@ def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path
                 os.remove(temp_path)
             combined.export(file_path, format="mp3")
             return f"/{file_path}"
-
-
-            # tts = gTTS(text)
-            # tts.save(output_file)
-            # playsound.playsound(output_file)
     except Exception as e:
         print("facing error inside function :: ", e)
 
@@ -280,14 +260,13 @@ def fetch_transcript(youtube_url: str):
     except Exception as e:
         print(f"No subtitles found for video {video_id}. Trying Whisper transcription...")
 
-        # Fallback: Download audio and use Whisper
         unique_filename = f"{uuid.uuid4().hex}.mp3"
-        audio_path = os.path.join("/tmp", unique_filename)  # or use a more persistent path
+        audio_path = os.path.join("/tmp", unique_filename)
 
         if download_audio(youtube_url, audio_path):
             try:
                 transcript_text = transcribe_audio_with_whisper(audio_path)
-                os.remove(audio_path)  # Clean up
+                os.remove(audio_path)
                 return transcript_text, None
             except Exception as whisper_error:
                 return None, f"Whisper transcription failed: {whisper_error}"

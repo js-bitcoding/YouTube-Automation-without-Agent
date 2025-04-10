@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean
+from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean
 
 Base = declarative_base()
 
@@ -71,7 +71,6 @@ class UserLoginHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     login_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
-    # logout_time = Column(DateTime, default=datetime.utcnow())
     logout_time = Column(DateTime,  nullable=True ,default=None)
     
     user = relationship("User")

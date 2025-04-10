@@ -1,19 +1,15 @@
 import os
-from pydub import AudioSegment
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
-from fastapi.responses import JSONResponse
 from functionality.current_user import get_current_user
 from database.models import RemixedScript, Script, User
 from fastapi import Depends, UploadFile, File, Form, HTTPException, status, APIRouter
 from service.script_service import (
     generate_script, 
     transcribe_audio, 
-    # text_to_speech, 
     get_video_details, 
     fetch_transcript, 
     format_script_response,
-    get_user_voice_sample,
     generate_speech,
     handle_voice_tone_upload
 )
@@ -114,7 +110,6 @@ def get_script(
         return {"error": "Script not found"}
     return {"script": script}
 
-# Endpoint for Speech-to-Text (upload an audio file)
 @script_router.post("/speech-to-text/")
 def speech_to_text(
     file: UploadFile = File(...),
@@ -131,7 +126,6 @@ def speech_to_text(
     except Exception as e:
         return {"error": str(e)}
 
-# Endpoint for Text-to-Speech (convert provided text to audio)
 @script_router.post("/text-to-speech/")
 async def text_to_speech_endpoint(
     text: str = Form(...),
@@ -144,7 +138,6 @@ async def text_to_speech_endpoint(
         user_id = current_user.id
         voice_sample_path = None
 
-        # Handle voice tone upload if provided
         if tone_file:
             voice_sample_path = await handle_voice_tone_upload(tone_file, user_id)
         print("voice_sample_path ::", voice_sample_path)
