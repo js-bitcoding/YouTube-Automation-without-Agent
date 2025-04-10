@@ -40,7 +40,6 @@ def search_thumbnails(
 ):
     query = db.query(Thumbnail).filter(Thumbnail.user_id == user.id)
 
-    # Optional filtering
     if keyword:
         query = query.filter(Thumbnail.keyword == keyword)
 
@@ -82,7 +81,6 @@ def validate_thumbnail_api(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user)
 ):
-    # Optional: Save file to temp location
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
     temp_path = os.path.join(temp_dir, file.filename)
@@ -90,10 +88,7 @@ def validate_thumbnail_api(
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Pass the saved file path to your validation logic
     result = validate_thumbnail(temp_path)
-
-    # Optional cleanup
     os.remove(temp_path)
 
     return result
@@ -102,14 +97,13 @@ def validate_thumbnail_api(
 async def generate_thumbnail(
     prompt: str = Form(...), 
     image: UploadFile = File(...),
-    filename: str = Form(None), # Optional filename
+    filename: str = Form(None),
     user_id: int = Depends(get_current_user)
     ):
 
     contents = await image.read()
     image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
 
-    # Ensure you have CUDA
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     pipe = StableDiffusionImg2ImgPipeline.from_pretrained("runwayml/stable-diffusion-v1-5").to(device)
@@ -128,5 +122,5 @@ async def generate_thumbnail(
 
     return {
         "message": "Image generated successfully.",
-        "output_path": output_path.replace("\\", "/")  # normalize path for cross-platform
+        "output_path": output_path.replace("\\", "/")
         }
