@@ -6,25 +6,95 @@ import uuid
 import torch
 import whisper
 import requests
+import traceback
 import torchaudio
 import subprocess
 from gtts import gTTS
 from uuid import uuid4
 from pathlib import Path
+from PyPDF2 import PdfReader
 from pydub import AudioSegment
 import google.generativeai as genai
 from tortoise.api import TextToSpeech
 from vosk import Model, KaldiRecognizer
+from docx import Document as DocxDocument
+from tortoise.utils.audio import load_audio
 from fastapi import UploadFile, HTTPException, status
 from youtube_transcript_api import YouTubeTranscriptApi
-from tortoise.utils.audio import load_audio
 from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
 
 GEMINI_API_KEY = GEMINI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
 
-def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casual", style: str = "Casual"):
-    print(f"Transcript inside the generate with ollama function :::::::: {transcript}")
+def analyze_transcript_style(transcript: str):
+    """Analyze style and accent from the transcript."""
+    analysis_prompt = f"""
+    You are a language expert. Analyze the following transcripts and describe take time if you want but give the exact details about:
+    1. The speaking **style** (e.g., informal, enthusiastic, educational, storytelling, motivational, etc.)
+    2. The speaking **tone/accent** (e.g., casual, serious, energetic, calming, etc.)
+
+    ### Transcript:
+    {transcript}
+
+    Just provide in simple text without markdown and give only one value for both:
+    - Style:
+    - Tone:
+
+    """
+
+    model = genai.GenerativeModel("gemini-1.5-pro-latest")
+    response = model.generate_content(analysis_prompt)
+    style = ""
+    tone = ""
+    if response and response.text:
+        lines = response.text.splitlines()
+        print(f"lines:::{lines}")
+        for line in lines:
+            if line.lower().startswith("style:"):
+                style = line.split(":", 1)[1].strip()
+                print(f"Style:::{style}")
+            if line.lower().startswith("tone:"):
+                tone = line.split(":", 1)[1].strip()
+                print(f"Tone:::{tone}")
+        return style, tone
+    return "Casual", "Casual"
+
+# def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casual", style: str = "Casual"):
+#     print(f"Transcript inside the generate with ollama function :::::::: {transcript}")
+#     print(f"mode ::: {mode} tone ::: {tone} style ::: {style}")
+#     prompt = f"""Generate a YouTube video script in {mode} mode with a {tone} tone and {style} style.
+#         You are an expert YouTube scriptwriter. Your task is to generate a **unique and detailed YouTube video script** while maintaining the **meaning and context** of the provided transcript.  
+
+#         ### **Instructions:**  
+#         1. **DO NOT summarize** the transcript. Instead, expand on it with more details, engaging explanations, and additional insights.  
+#         2. Maintain a **logical flow** with pauses (`...`) where needed for narration.
+#         3. Add a **YouTube intro hook** based on the selected **tone and style** to grab attention instantly.  
+#         4. If the mode is **long-form**, ensure the script is **detailed, engaging, and more descriptive** than the original.  
+#         5. If the mode is **short-form**, keep the content **concise but impactful**, without summarizing.  
+#         6. If the mode is **storytelling**, extend the transcript significantly, adding **rich descriptions, emotions, and narrative depth** while preserving its meaning.  
+#         7. **Rephrase sentences** naturally to avoid repetition but retain the core ideas.  
+#         8. **Avoid using escape sequences** in the generated text.  
+#         9. Ensure the script can be easily converted into speech.
+
+#         ### **Given Transcript (Reference):**  
+#         {transcript}  
+
+#         ### **Generate a new, detailed, and engaging YouTube script based on the above guidelines.**  
+#         """
+
+#     print("Generating Script with the Gemini::::", prompt)
+#     model = genai.GenerativeModel("gemini-1.5-pro-latest")
+#     response = model.generate_content(prompt)
+#     print(f"Response form Gemini :: {response}")
+
+#     if response and response.text:
+#         formatted_script = response.text.replace("\n", "\n\n")
+#         return formatted_script
+#     else:
+#         return "Error generating script"
+
+def generate_script(document_content: str, style: str, tone: str, mode: str = "Short-form"):
+    print(f"Transcript inside the generate with gemini function :::::::: {document_content}")
     print(f"mode ::: {mode} tone ::: {tone} style ::: {style}")
     prompt = f"""Generate a YouTube video script in {mode} mode with a {tone} tone and {style} style.
         You are an expert YouTube scriptwriter. Your task is to generate a **unique and detailed YouTube video script** while maintaining the **meaning and context** of the provided transcript.  
@@ -38,20 +108,18 @@ def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casu
         6. If the mode is **storytelling**, extend the transcript significantly, adding **rich descriptions, emotions, and narrative depth** while preserving its meaning.  
         7. **Rephrase sentences** naturally to avoid repetition but retain the core ideas.  
         8. **Avoid using escape sequences** in the generated text.  
-        9. Ensure the script can be easily converted into speech.
+        9. Ensure the script can be easily converted into speech.  
 
-        ### **Given Transcript (Reference):**  
-        {transcript}  
+        ### **Document Content (Reference):**  
+        {document_content}
 
         ### **Generate a new, detailed, and engaging YouTube script based on the above guidelines.**  
         """
-
 
     print("Generating Script with the Gemini::::", prompt)
     model = genai.GenerativeModel("gemini-1.5-pro-latest")
     response = model.generate_content(prompt)
     print(f"Response form Gemini :: {response}")
-
     if response and response.text:
         formatted_script = response.text.replace("\n", "\n\n")
         return formatted_script
@@ -95,7 +163,7 @@ def transcribe_audio(file_path: str):
 
             res = json.loads(rec.FinalResult())
             result_text += " " + res.get("text", "")
-
+  
     finally:
         if os.path.exists(wav_file):
             os.remove(wav_file)
@@ -170,7 +238,6 @@ def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path
                 conditioning_latents = tts_model.get_conditioning_latents(voice_samples)
                 print(f"voice_samples: {voice_samples}")
             except Exception as e: 
-                import traceback
                 print("Error in load_voice()")
                 traceback.print_exc()
                 raise HTTPException(status_code=500, detail="Voice loading failed")
@@ -194,7 +261,6 @@ def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path
             return f"/{file_path}"
 
         else:
-            from pydub import AudioSegment
             combined = AudioSegment.empty()
             for chunk in chunks:
                 temp_path = f"{uuid4().hex[:6]}_temp.mp3"
@@ -261,15 +327,18 @@ def fetch_transcript(youtube_url: str):
         print(f"No subtitles found for video {video_id}. Trying Whisper transcription...")
 
         unique_filename = f"{uuid.uuid4().hex}.mp3"
-        audio_path = os.path.join("/tmp", unique_filename)
+        audio_path = os.path.join("tmp", unique_filename)
 
         if download_audio(youtube_url, audio_path):
-            try:
-                transcript_text = transcribe_audio_with_whisper(audio_path)
-                os.remove(audio_path)
-                return transcript_text, None
-            except Exception as whisper_error:
-                return None, f"Whisper transcription failed: {whisper_error}"
+            if os.path.exists(audio_path):
+                try:
+                    transcript_text = transcribe_audio_with_whisper(audio_path)
+                    os.remove(audio_path)
+                    return transcript_text, None
+                except Exception as whisper_error:
+                    return None, f"Whisper transcription failed: {whisper_error}"
+            else:
+                return None, f"Audio file not found at path: {audio_path}"
         else:
             return None, f"Failed to download audio for transcription"
 
@@ -287,7 +356,6 @@ def format_script_response(raw_script: str) -> str:
     cleaned_script = re.sub(r'\n+', '\n', cleaned_script).strip()
 
     return cleaned_script
-
 
 def download_audio(video_url: str, output_path: str) -> bool:
     try:
@@ -308,10 +376,31 @@ def transcribe_audio_with_whisper(audio_path: str) -> str:
     result = model.transcribe(audio_path)
     return result["text"]
 
-
 def get_user_voice_sample(user_id: int) -> str:
     for ext in ["mp3", "wav"]:
         path = os.path.join(VOICE_TONE_DIR, f"user_{user_id}.{ext}")
         if os.path.exists(path):
             return path
     return None
+
+def extract_text_from_file(file_path: str) -> str:
+    if file_path.endswith(".pdf"):
+        return extract_text_from_pdf(file_path)
+    elif file_path.endswith(".docx"):
+        return extract_text_from_docx(file_path)
+    elif file_path.endswith(".txt"):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return ""
+
+def extract_text_from_pdf(file_path: str) -> str:
+    reader = PdfReader(file_path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() + "\n"
+    return text.strip()
+
+def extract_text_from_docx(file_path: str) -> str:
+    doc = DocxDocument(file_path)
+    text = "\n".join([para.text for para in doc.paragraphs])
+    return text.strip()

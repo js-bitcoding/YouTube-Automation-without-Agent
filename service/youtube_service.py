@@ -241,7 +241,7 @@ def store_videos_in_db(videos):
             session.commit()
         except IntegrityError:
             session.rollback()
-            print(f"Video {video['video_id']} already exists in the database.")
+            # print(f"Video {video['video_id']} already exists in the database.")
 
 def fetch_video_by_id(video_id):
     """Fetch details for a single video using its video ID."""

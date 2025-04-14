@@ -51,7 +51,7 @@ def process_generated_titles(response: str) -> list:
     titles = response.strip().split("\n")
     titles = [re.sub(r"^\d+[\.\)]?\s*", "", title).strip() for title in titles if title.strip()]
     
-    return titles[:5]  
+    return titles[:6]  
 
 def generate_titles_prompt(video_topic: str, video_description: str = "") -> str:
     """Creates a structured prompt for generating video titles."""
