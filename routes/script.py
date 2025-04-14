@@ -1,28 +1,139 @@
 import os
+import datetime
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
+from fastapi.responses import JSONResponse
 from functionality.current_user import get_current_user
-from database.models import RemixedScript, Script, User
+from database.models import RemixedScript, Script, User, Document
 from fastapi import Depends, UploadFile, File, Form, HTTPException, status, APIRouter
 from service.script_service import (
     generate_script, 
+    generate_speech,
+    fetch_transcript, 
     transcribe_audio, 
     get_video_details, 
-    fetch_transcript, 
+    extract_text_from_file,
     format_script_response,
-    generate_speech,
-    handle_voice_tone_upload
+    handle_voice_tone_upload,
+    analyze_transcript_style,
 )
 
+UPLOAD_FOLDER = "assets/uploaded_documents"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 script_router = APIRouter()
+
+@script_router.post("/upload-document/")
+async def upload_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+    ):
+    if not file.filename.endswith((".pdf", ".docx", ".txt")):
+        raise HTTPException(status_code=400, detail="Only PDF, DOCX, and TXT files are allowed.")
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    filename = f"{timestamp}_{file.filename}"
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    with open(file_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    extracted_text = extract_text_from_file(file_path)
+    cleaned_text = " ".join(extracted_text.split())
+
+    doc_entry = Document(filename=file.filename, content=cleaned_text)
+    db.add(doc_entry)
+    db.commit()
+    db.refresh(doc_entry)
+
+    return JSONResponse(content={
+        "filename": file.filename, 
+        "message": "Upload & text extraction successful"
+        })
+
+# @script_router.post("/generate-script/")
+# def generate_script_api(
+#     idea: str = Form(None),
+#     title: str = Form(None),
+#     tone: str = Form("Casual"),
+#     mode: str = Form("Short-form"),
+#     style: str = Form("Casual"),
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     try:
+#         if not idea and not title:
+#             return {"error": "Either idea or title must be provided"}
+
+#         search_query = idea if idea else title
+#         videos = get_video_details(search_query, max_results=5)
+#         print(f"Fetched trending videos ::: {videos}")
+
+#         if not videos:
+#             return {"error": "No trending YouTube videos found with subtitles"}
+
+#         transcripts = []
+#         youtube_links = []
+
+#         for video in videos:
+#             if len(transcripts) >= 3:  # Stop once we get 3 transcripts
+#                 break
+#             transcript, err = fetch_transcript(video["link"])
+#             if transcript:
+#                 transcripts.append(transcript)
+#                 youtube_links.append(video["link"])
+
+#         if not transcripts:
+#             return {"error": "Failed to extract transcripts from videos"}
+        
+#         if len(transcripts) < 3:
+#             return {"error": "Insufficient transcripts extracted. Try a different idea or title."}
+
+#         combined_transcript = "\n".join(transcripts)
+
+#         past_scripts = db.query(Script).filter(Script.input_title == search_query).all()
+#         if past_scripts:
+#             past_content = "\n".join([ps.generated_script for ps in past_scripts])
+#             combined_transcript += f"\n\n{past_content}"
+
+#         generated_script = generate_script(combined_transcript, mode=mode, tone=tone, style=style)
+
+#         formatted_script = format_script_response(generated_script)
+#         if "I can't help with this request." in formatted_script:
+#             return {"error": "Script generation failed. Try modifying the input."}
+
+#         new_script = Script(
+#             input_title=search_query,
+#             video_title=f"Script for {search_query}",
+#             mode=mode,
+#             style=style,
+#             transcript=combined_transcript,
+#             generated_script=formatted_script,
+#             youtube_links=", ".join(youtube_links),
+#             user_id=current_user.id
+#         )
+#         db.add(new_script)
+#         db.commit()
+#         db.refresh(new_script)
+
+#         return {
+#             "message": "Script generated successfully",
+#             "script_id": new_script.id,
+#             "generated_script": generated_script,
+#             "youtube_links": youtube_links
+#         }
+
+#     except Exception as e:
+#         return {"error": str(e)}
 
 @script_router.post("/generate-script/")
 def generate_script_api(
     idea: str = Form(None),
     title: str = Form(None),
-    tone: str = Form("Casual"),
+    document_name: str = Form(...),
     mode: str = Form("Short-form"),
-    style: str = Form("Casual"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -30,42 +141,36 @@ def generate_script_api(
         if not idea and not title:
             return {"error": "Either idea or title must be provided"}
 
-        search_query = idea if idea else title
+        search_query = idea or title
         videos = get_video_details(search_query, max_results=5)
-        print(f"Fetched trending videos ::: {videos}")
-
-        if not videos:
-            return {"error": "No trending YouTube videos found with subtitles"}
 
         transcripts = []
         youtube_links = []
-
         for video in videos:
-            if len(transcripts) >= 3:  # Stop once we get 3 transcripts
+            if len(transcripts) >= 3:
                 break
             transcript, err = fetch_transcript(video["link"])
             if transcript:
                 transcripts.append(transcript)
                 youtube_links.append(video["link"])
 
-        if not transcripts:
-            return {"error": "Failed to extract transcripts from videos"}
-        
-        if len(transcripts) < 3:
-            return {"error": "Insufficient transcripts extracted. Try a different idea or title."}
+        if len(transcripts) < 1:
+            return {"error": "Could not extract enough transcripts for analysis."}
 
-        combined_transcript = "\n".join(transcripts)
+        combined_transcript = "\n".join(transcripts[:4])
+        style, tone = analyze_transcript_style(combined_transcript)
 
-        past_scripts = db.query(Script).filter(Script.input_title == search_query).all()
-        if past_scripts:
-            past_content = "\n".join([ps.generated_script for ps in past_scripts])
-            combined_transcript += f"\n\n{past_content}"
+        document = db.query(Document).filter(Document.filename == document_name).first()
+        if not document:
+            return {"error": "Document not found"}
 
-        generated_script = generate_script(combined_transcript, mode=mode, tone=tone, style=style)
-
+        generated_script = generate_script(
+                            document_content=document.content,
+                            style=style,
+                            tone=tone,
+                            mode=mode
+                        )
         formatted_script = format_script_response(generated_script)
-        if "I can't help with this request." in formatted_script:
-            return {"error": "Script generation failed. Try modifying the input."}
 
         new_script = Script(
             input_title=search_query,
@@ -84,7 +189,9 @@ def generate_script_api(
         return {
             "message": "Script generated successfully",
             "script_id": new_script.id,
-            "generated_script": generated_script,
+            "style": style,
+            "tone": tone,
+            "generated_script": formatted_script,
             "youtube_links": youtube_links
         }
 
@@ -155,13 +262,11 @@ async def text_to_speech_endpoint(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-
 @script_router.post("/remix-script/")
 def remix_script_api(
     video_url: str = Form(...),
-    tone: str = Form("Casual"),
     mode: str = Form("Short-form"),
-    style: str = Form("Casual"),
+    document_name: str = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -169,8 +274,19 @@ def remix_script_api(
         transcript, err = fetch_transcript(video_url)
         if not transcript:
             return {"error": f"Failed to extract transcript: {err}"}
+        
+        style, tone = analyze_transcript_style(transcript)
+        
+        document = db.query(Document).filter(Document.filename == document_name).first()
+        if not document:
+            return {"error": "Document not found in database."}
 
-        remixed_script = generate_script(transcript, mode=mode, tone=tone, style=style)
+        remixed_script = generate_script(
+            document_content=document.content,
+            mode=mode,
+            style=style,
+            tone=tone
+            )
 
         formatted_script = format_script_response(remixed_script)
         if "I can't help with this request." in formatted_script:
@@ -180,7 +296,6 @@ def remix_script_api(
         new_remixed_script = RemixedScript(
             video_url=video_url,
             mode=mode,
-            style=style,
             transcript=transcript,
             remixed_script=formatted_script,
             user_id=current_user.id

@@ -38,3 +38,6 @@ pydantic==2.10.6
 PyJWT==2.3.0
 fastapi-limiter==0.1.6
 scikit-learn==1.6.1
+yt-dlp==2025.3.31
+PyPDF2
+python-docx

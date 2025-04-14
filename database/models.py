@@ -39,7 +39,7 @@ class Script(Base):
 class RemixedScript(Base):
     __tablename__ = "remixed_scripts"
     id = Column(Integer, primary_key=True, index=True)
-    video_url = Column(String, unique=True, index=True)
+    video_url = Column(String, unique=False, index=True)
     mode = Column(String)
     style = Column(String)
     transcript = Column(Text)
@@ -144,3 +144,10 @@ class GeneratedTitle(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
     user = relationship("User", back_populates="generated_titles")
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, unique=True, nullable=False)
+    content = Column(Text, nullable=False)

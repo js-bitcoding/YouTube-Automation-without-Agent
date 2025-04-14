@@ -11,6 +11,7 @@ output.mp3
 test.py
 tmp/
 temp_uploads/
+uploaded_documents/
 
 # Virtual Envs
 venv3.10/
