@@ -4,30 +4,40 @@ import json
 import torch
 import shutil
 from PIL import Image
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
 from fastapi.responses import JSONResponse
 from database.models import Thumbnail, User
+from config  import GENERATED_THUMBNAILS_PATH
 from diffusers import StableDiffusionImg2ImgPipeline
 from functionality.current_user import get_current_user
-from fastapi import Depends, UploadFile, File, Form, Query, HTTPException, status, APIRouter
+from fastapi import Depends, UploadFile, File, Form, Query, HTTPException, status, APIRouter, Body
 from service.thumbnail_service import (
     store_thumbnails, 
+    validate_thumbnail,
+    fetch_thumbnails_preview,
     generate_image_from_input, 
-    validate_thumbnail
 )
 
 thumbnail_router = APIRouter()
 
-@thumbnail_router.get("/store/")
-def store_api(
+@thumbnail_router.get("/fetch_thumbnails/")
+def fetch_thumbnails(
     keyword: str = Query(...),
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user)
+    user: User = Depends(get_current_user)
     ):
-    result = store_thumbnails(keyword, user_id)
-    return {"message": "Thumbnails stored successfully.", "results": result}
+    results = fetch_thumbnails_preview(keyword)
+    return {"message": "Fetched thumbnails for preview.", "results": results}
+
+@thumbnail_router.post("/store_selected_thumbnails/")
+def store_selected(
+    video_ids: List[str] = Body(...),
+    keyword: str = Query(...),
+    current_user: User = Depends(get_current_user)
+):
+    result = store_thumbnails(video_ids, keyword, current_user)
+    return result
 
 @thumbnail_router.get("/search/")
 def search_thumbnails(
@@ -79,7 +89,7 @@ def search_thumbnails(
 def validate_thumbnail_api(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user)
+    user: User = Depends(get_current_user)
 ):
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
@@ -93,12 +103,34 @@ def validate_thumbnail_api(
 
     return result
 
+@thumbnail_router.get("/get_thumbnails/")
+def get_my_thumbnails(
+    db: Session = Depends(get_db), 
+    user: User = Depends(get_current_user)
+    ):
+    thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
+    return [
+        {
+            "id": thumb.id,
+            "video_id": thumb.video_id,
+            "title": thumb.title,
+            "url": thumb.url,
+            "saved_path": thumb.saved_path,
+            "text_detection": thumb.text_detection,
+            "face_detection": thumb.face_detection,
+            "emotion": thumb.emotion,
+            "color_palette": thumb.color_palette,
+            "keyword": thumb.keyword,
+        }
+        for thumb in thumbnails
+    ]
+
 @thumbnail_router.post("/generate-thumbnail/")
 async def generate_thumbnail(
     prompt: str = Form(...), 
     image: UploadFile = File(...),
     filename: str = Form(None),
-    user_id: int = Depends(get_current_user)
+    user: User = Depends(get_current_user)
     ):
 
     contents = await image.read()
@@ -110,7 +142,7 @@ async def generate_thumbnail(
     
     result = pipe(prompt=prompt, image=image, strength=0.7).images[0]
 
-    output_folder = "assets/generated_thumbnails"
+    output_folder = GENERATED_THUMBNAILS_PATH
     if not filename:
         raise HTTPException(status_code=400, detail="Filename is required.")
     

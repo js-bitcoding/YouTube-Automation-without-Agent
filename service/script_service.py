@@ -3,22 +3,22 @@ import re
 import wave
 import json
 import uuid
-import torch
+# import torch
 import whisper
 import requests
-import traceback
-import torchaudio
+# import traceback
+# import torchaudio
 import subprocess
-from gtts import gTTS
-from uuid import uuid4
+# from gtts import gTTS
+# from uuid import uuid4
 from pathlib import Path
 from PyPDF2 import PdfReader
 from pydub import AudioSegment
 import google.generativeai as genai
-from tortoise.api import TextToSpeech
+# from tortoise.api import TextToSpeech
 from vosk import Model, KaldiRecognizer
 from docx import Document as DocxDocument
-from tortoise.utils.audio import load_audio
+# from tortoise.utils.audio import load_audio
 from fastapi import UploadFile, HTTPException, status
 from youtube_transcript_api import YouTubeTranscriptApi
 from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
@@ -170,7 +170,7 @@ def transcribe_audio(file_path: str):
 
     return {"transcription": result_text.strip()}
 
-tts_model = TextToSpeech()
+# tts_model = TextToSpeech()
 
 async def handle_voice_tone_upload(file: UploadFile, user_id: int) -> str:
     ext = file.filename.split(".")[-1].lower()
@@ -218,61 +218,61 @@ def split_text(text: str, max_length: int = MAX_CHARS):
         chunks.append(current.strip())
     return chunks
 
-def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path: str) -> str:
-    try:
-        if not speech_name.lower().endswith(".mp3"):
-            speech_name += ".mp3"
+# def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path: str) -> str:
+#     try:
+#         if not speech_name.lower().endswith(".mp3"):
+#             speech_name += ".mp3"
 
-        unique_id = uuid4().hex[:6]
-        filename = f"{os.path.splitext(speech_name)[0]}_{unique_id}.mp3"
-        file_path = os.path.join(GENERATED_AUDIO_PATH, filename)
+#         unique_id = uuid4().hex[:6]
+#         filename = f"{os.path.splitext(speech_name)[0]}_{unique_id}.mp3"
+#         file_path = os.path.join(GENERATED_AUDIO_PATH, filename)
 
-        chunks = split_text(text, max_length=25)
+#         chunks = split_text(text, max_length=25)
 
-        waveform_list = []
+#         waveform_list = []
 
-        if voice_sample_path and os.path.exists(voice_sample_path):
-            print(f"Using custom voice cloning :: {voice_sample_path}")
-            try:
-                voice_samples = [load_audio(voice_sample_path, 22050)]
-                conditioning_latents = tts_model.get_conditioning_latents(voice_samples)
-                print(f"voice_samples: {voice_samples}")
-            except Exception as e: 
-                print("Error in load_voice()")
-                traceback.print_exc()
-                raise HTTPException(status_code=500, detail="Voice loading failed")
-            print(f"conditioning_latents: {conditioning_latents}")
-            print("Voice samples loaded successfully.")
-            print(f"Chunks: {chunks}")
-            print("Appending generated waveform...")
+#         if voice_sample_path and os.path.exists(voice_sample_path):
+#             print(f"Using custom voice cloning :: {voice_sample_path}")
+#             try:
+#                 voice_samples = [load_audio(voice_sample_path, 22050)]
+#                 conditioning_latents = tts_model.get_conditioning_latents(voice_samples)
+#                 print(f"voice_samples: {voice_samples}")
+#             except Exception as e: 
+#                 print("Error in load_voice()")
+#                 traceback.print_exc()
+#                 raise HTTPException(status_code=500, detail="Voice loading failed")
+#             print(f"conditioning_latents: {conditioning_latents}")
+#             print("Voice samples loaded successfully.")
+#             print(f"Chunks: {chunks}")
+#             print("Appending generated waveform...")
 
-            for chunk in chunks:
-                generated = tts_model.tts_with_preset(
-                    text=chunk,
-                    voice_samples=voice_samples,
-                    conditioning_latents=conditioning_latents,
-                    preset="fast",
-                    num_autoregressive_samples=4
-                )
-                waveform_list.append(generated.squeeze(0).cpu())
+#             for chunk in chunks:
+#                 generated = tts_model.tts_with_preset(
+#                     text=chunk,
+#                     voice_samples=voice_samples,
+#                     conditioning_latents=conditioning_latents,
+#                     preset="fast",
+#                     num_autoregressive_samples=4
+#                 )
+#                 waveform_list.append(generated.squeeze(0).cpu())
 
-            final_waveform = torch.cat(waveform_list, dim=1)
-            torchaudio.save(file_path, final_waveform, 24000)
-            return f"/{file_path}"
+#             final_waveform = torch.cat(waveform_list, dim=1)
+#             torchaudio.save(file_path, final_waveform, 24000)
+#             return f"/{file_path}"
 
-        else:
-            combined = AudioSegment.empty()
-            for chunk in chunks:
-                temp_path = f"{uuid4().hex[:6]}_temp.mp3"
-                tts = gTTS(chunk)
-                tts.save(temp_path)
-                audio = AudioSegment.from_mp3(temp_path)
-                combined += audio
-                os.remove(temp_path)
-            combined.export(file_path, format="mp3")
-            return f"/{file_path}"
-    except Exception as e:
-        print("facing error inside function :: ", e)
+#         else:
+#             combined = AudioSegment.empty()
+#             for chunk in chunks:
+#                 temp_path = f"{uuid4().hex[:6]}_temp.mp3"
+#                 tts = gTTS(chunk)
+#                 tts.save(temp_path)
+#                 audio = AudioSegment.from_mp3(temp_path)
+#                 combined += audio
+#                 os.remove(temp_path)
+#             combined.export(file_path, format="mp3")
+#             return f"/{file_path}"
+#     except Exception as e:
+#         print("facing error inside function :: ", e)
 
 def get_video_details(query: str, max_results: int = 5):
     """

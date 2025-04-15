@@ -1,5 +1,6 @@
 import os
 import datetime
+from config import UPLOAD_FOLDER
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
 from fastapi.responses import JSONResponse
@@ -8,7 +9,7 @@ from database.models import RemixedScript, Script, User, Document
 from fastapi import Depends, UploadFile, File, Form, HTTPException, status, APIRouter
 from service.script_service import (
     generate_script, 
-    generate_speech,
+    # generate_speech,
     fetch_transcript, 
     transcribe_audio, 
     get_video_details, 
@@ -18,7 +19,6 @@ from service.script_service import (
     analyze_transcript_style,
 )
 
-UPLOAD_FOLDER = "assets/uploaded_documents"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 script_router = APIRouter()
@@ -233,34 +233,34 @@ def speech_to_text(
     except Exception as e:
         return {"error": str(e)}
 
-@script_router.post("/text-to-speech/")
-async def text_to_speech_endpoint(
-    text: str = Form(...),
-    speech_name: str = Form(...),
-    tone_file: UploadFile = File(None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    try:
-        user_id = current_user.id
-        voice_sample_path = None
+# @script_router.post("/text-to-speech/")
+# async def text_to_speech_endpoint(
+#     text: str = Form(...),
+#     speech_name: str = Form(...),
+#     tone_file: UploadFile = File(None),
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     try:
+#         user_id = current_user.id
+#         voice_sample_path = None
 
-        if tone_file:
-            voice_sample_path = await handle_voice_tone_upload(tone_file, user_id)
-        print("voice_sample_path ::", voice_sample_path)
-        audio_file_url = generate_speech(text, speech_name, user_id, voice_sample_path)
-        if not audio_file_url:
-            raise HTTPException(status_code=500, detail="Audio file generation failed")
+#         if tone_file:
+#             voice_sample_path = await handle_voice_tone_upload(tone_file, user_id)
+#         print("voice_sample_path ::", voice_sample_path)
+#         audio_file_url = generate_speech(text, speech_name, user_id, voice_sample_path)
+#         if not audio_file_url:
+#             raise HTTPException(status_code=500, detail="Audio file generation failed")
 
-        return {
-            "message": "Speech generated successfully",
-            "audio_file_url": audio_file_url
-        }
+#         return {
+#             "message": "Speech generated successfully",
+#             "audio_file_url": audio_file_url
+#         }
 
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+#     except HTTPException as http_exc:
+#         raise http_exc
+#     except Exception as e:
+#         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @script_router.post("/remix-script/")
 def remix_script_api(

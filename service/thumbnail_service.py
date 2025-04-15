@@ -6,6 +6,9 @@ import requests
 import mimetypes
 import pytesseract
 from fer import FER
+from PIL import Image
+from io import BytesIO
+from typing import List
 from fastapi import Depends
 from database.models import User
 from mediapipe import solutions
@@ -116,16 +119,37 @@ def save_thumbnail(video):
         return filepath
     return None
 
-def store_thumbnails(keyword, current_user: User = Depends(get_current_user)):
-    """Fetches thumbnails from YouTube, analyzes them, and stores them in the database."""
+def fetch_thumbnails_preview(keyword: str):
+    """Fetch and return top thumbnails for preview (no storage)."""
     videos = fetch_video_thumbnails(keyword)
-    if not videos:
-        return {"message": "No thumbnails found for this keyword."}
+    results = []
+
+    for video in videos:
+        validation = validate_thumbnail(video['thumbnail_url'], from_url=True)  # You can enhance `validate_thumbnail` to work on URLs
+        results.append({
+            "video_id": video["video_id"],
+            "title": video["title"],
+            "url": video["thumbnail_url"],
+            "text_detection": validation["text_detection"],
+            "face_detection": validation["face_detection"],
+            "emotions": validation["emotion"],
+            "color_palette": validation["color_palette"]
+        })
+    
+    return results
+
+def store_thumbnails(video_ids: List[str], keyword: str, current_user: User):
+    """Store thumbnails from specific video IDs only."""
+    videos = fetch_video_thumbnails(keyword)
+    selected_videos = [v for v in videos if v["video_id"] in video_ids]
+
+    if not selected_videos:
+        return {"message": "No matching thumbnails found for provided video IDs."}
 
     db = SessionLocal()
     results = []
 
-    for video in videos:
+    for video in selected_videos:
         filepath = save_thumbnail(video)
         if filepath:
             validation = validate_thumbnail(filepath)
@@ -136,10 +160,10 @@ def store_thumbnails(keyword, current_user: User = Depends(get_current_user)):
                 title=video["title"],
                 url=video["thumbnail_url"],
                 saved_path=filepath,
-                text_detection=validation["text_detection"],  # Store as a boolean
+                text_detection=validation["text_detection"],
                 face_detection=validation["face_detection"],
                 emotion=validation["emotion"],
-                color_palette=json.dumps(validation["color_palette"]),  # Store as JSON
+                color_palette=json.dumps(validation["color_palette"]),
                 user_id=current_user.id
             )
             db.add(thumbnail)
@@ -156,8 +180,8 @@ def store_thumbnails(keyword, current_user: User = Depends(get_current_user)):
 
     db.commit()
     db.close()
-    
-    return {"message": "Thumbnails stored successfully.", "results": results}
+
+    return {"message": "Selected thumbnails stored successfully.", "results": results}
 
 def clarity_score(image_path):
     image = cv2.imread(image_path)
@@ -188,21 +212,57 @@ def detect_emotions(image_path):
     else:
         return None
 
-def validate_thumbnail(image_path):
-    text_exists = detect_text(image_path)
-    text_value = extract_fonts(image_path)
-    faces = detect_faces(image_path)
-    emotion = detect_emotions(image_path) if faces > 0 else None
-    colors = extract_colors(image_path)
+# def validate_thumbnail(image_path):
+#     text_exists = detect_text(image_path)
+#     text_value = extract_fonts(image_path)
+#     faces = detect_faces(image_path)
+#     emotion = detect_emotions(image_path) if faces > 0 else None
+#     colors = extract_colors(image_path)
     
-    return {
-        "clarity": clarity_score(image_path),
-        "predicted_ctr": predict_ctr_score(image_path),
-        "text_detection": {
-            "exists": text_exists,
-            "value": text_value.strip() if text_exists else ""
-        },
-        "face_detection": faces,
-        "emotion": emotion,
-        "color_palette": colors
-    }
+#     return {
+#         "clarity": clarity_score(image_path),
+#         "predicted_ctr": predict_ctr_score(image_path),
+#         "text_detection": {
+#             "exists": text_exists,
+#             "value": text_value.strip() if text_exists else ""
+#         },
+#         "face_detection": faces,
+#         "emotion": emotion,
+#         "color_palette": colors
+#     }
+
+def validate_thumbnail(image_path, from_url=False):
+    # Load the image depending on source
+    if from_url:
+        response = requests.get(image_path)
+        if response.status_code != 200:
+            raise ValueError(f"Failed to fetch image from URL: {image_path}")
+        image = Image.open(BytesIO(response.content)).convert("RGB")
+        temp_path = "temp_thumbnail.jpg"
+        image.save(temp_path)
+        image_path = temp_path  # Now validate from saved temp
+    else:
+        temp_path = None
+
+    try:
+        text_exists = detect_text(image_path)
+        text_value = extract_fonts(image_path)
+        faces = detect_faces(image_path)
+        emotion = detect_emotions(image_path) if faces > 0 else None
+        colors = extract_colors(image_path)
+        
+        return {
+            "clarity": clarity_score(image_path),
+            "predicted_ctr": predict_ctr_score(image_path),
+            "text_detection": {
+                "exists": text_exists,
+                "value": text_value.strip() if text_exists else ""
+            },
+            "face_detection": faces,
+            "emotion": emotion,
+            "color_palette": colors
+        }
+    finally:
+        # Clean up temp file if it was downloaded
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)

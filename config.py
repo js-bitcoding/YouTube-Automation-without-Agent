@@ -9,7 +9,8 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:test123@localhost/youtube_automation")
 
-THUMBNAIL_STORAGE_PATH = "assets/thumbnails/"
-GENERATED_THUMBNAILS_PATH = "assets/generated/"
-GENERATED_AUDIO_PATH = "assets/audio"
-VOICE_TONE_DIR = "assets/voice_tones"
+THUMBNAIL_STORAGE_PATH = os.getenv("THUMBNAIL_STORAGE_PATH")
+GENERATED_THUMBNAILS_PATH = os.getenv("GENERATED_THUMBNAILS_PATH")
+GENERATED_AUDIO_PATH = os.getenv("GENERATED_AUDIO_PATH")
+VOICE_TONE_DIR = os.getenv("VOICE_TONE_DIR")
+UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")

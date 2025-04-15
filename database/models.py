@@ -8,7 +8,7 @@ Base = declarative_base()
 class Thumbnail(Base):
     __tablename__ = "thumbnails"
     id = Column(Integer, primary_key=True, index=True)
-    video_id = Column(String, unique=True, nullable=False)
+    video_id = Column(String, unique=False, nullable=False)
     title = Column(String, nullable=False)
     url = Column(String, nullable=False)
     saved_path = Column(String, nullable=True)
