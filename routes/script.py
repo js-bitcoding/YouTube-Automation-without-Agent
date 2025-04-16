@@ -6,7 +6,7 @@ from database.db_connection import get_db
 from fastapi.responses import JSONResponse
 from functionality.current_user import get_current_user
 from database.models import RemixedScript, Script, User, Document
-from fastapi import Depends, UploadFile, File, Form, HTTPException, status, APIRouter
+from fastapi import Depends, UploadFile, File, Form, HTTPException, status, APIRouter, Body
 from service.script_service import (
     generate_script, 
     # generate_speech,
@@ -26,6 +26,7 @@ script_router = APIRouter()
 @script_router.post("/upload-document/")
 async def upload_document(
     file: UploadFile = File(...),
+    group: str = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
     ):

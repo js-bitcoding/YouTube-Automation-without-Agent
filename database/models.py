@@ -1,52 +1,35 @@
 import datetime
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger
+from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table
 
 Base = declarative_base()
 
-class Thumbnail(Base):
-    __tablename__ = "thumbnails"
+class Project(Base):
+    __tablename__ = "projects"
+
     id = Column(Integer, primary_key=True, index=True)
-    video_id = Column(String, unique=False, nullable=False)
-    title = Column(String, nullable=False)
-    url = Column(String, nullable=False)
-    saved_path = Column(String, nullable=True)
-    text_detection = Column(JSON, nullable=True)
-    face_detection = Column(Integer, nullable=True)
-    emotion = Column(String, nullable=True)
-    color_palette = Column(JSON, nullable=True)
-    keyword = Column(Text)
-    
+    name = Column(String, unique=True, nullable=False)
+    created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    user = relationship("User", back_populates="saved_thumbnails")
 
-class Script(Base):
-    __tablename__ = "scripts"
+    groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
+
+class Group(Base):
+    __tablename__ = "groups"
+
     id = Column(Integer, primary_key=True, index=True)
-    input_title = Column(String, nullable=False)
-    video_title = Column(String, nullable=True)
-    mode = Column(String, nullable=False)
-    style = Column(String, nullable=False)
-    transcript = Column(Text, nullable=False)
-    generated_script = Column(Text, nullable=False)
-    youtube_links = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-
+    name = Column(String(50), index=True)
+    created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    user = relationship("User", back_populates="generated_script")
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
 
-class RemixedScript(Base):
-    __tablename__ = "remixed_scripts"
-    id = Column(Integer, primary_key=True, index=True)
-    video_url = Column(String, unique=False, index=True)
-    mode = Column(String)
-    style = Column(String)
-    transcript = Column(Text)
-    remixed_script = Column(Text)
+    project = relationship("Project", back_populates="groups", passive_deletes=True)
+    documents = relationship("Document", back_populates="group", cascade="all, delete-orphan")
+    videos = relationship("YouTubeVideo", back_populates="group", cascade="all, delete-orphan")
+    chats = relationship("Chat", back_populates="group", cascade="all, delete-orphan")
 
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    user = relationship("User", back_populates="remixed_script")
+    user = relationship("User", back_populates="groups", passive_deletes=True)
 
 class User(Base):
     __tablename__ = "users"
@@ -56,14 +39,17 @@ class User(Base):
     password = Column(String, nullable=False)
     is_active = Column(Boolean, default=False)
     role = Column(String, default="user")  # "admin" or "user"
-    login_history = relationship("UserLoginHistory", back_populates="user", cascade="all, delete-orphan") 
    
 
+    login_history = relationship("UserLoginHistory", back_populates="user", cascade="all, delete-orphan") 
     saved_thumbnails = relationship("Thumbnail", back_populates="user", cascade="all, delete-orphan")
     generated_script = relationship("Script", back_populates="user", cascade="all, delete-orphan")
     remixed_script = relationship("RemixedScript", back_populates="user", cascade="all, delete-orphan")
     saved_videos = relationship("UserSavedVideo", back_populates="user", cascade="all, delete-orphan")
     generated_titles = relationship("GeneratedTitle", back_populates="user", cascade="all, delete-orphan")
+    groups = relationship("Group", back_populates="user", cascade="all, delete-orphan")
+    projects = relationship("Project", backref="user", cascade="all, delete-orphan")
+    chats = relationship("Chat", backref="user")
 
 class UserLoginHistory(Base):
     __tablename__ = "user_login_history"
@@ -145,9 +131,74 @@ class GeneratedTitle(Base):
 
     user = relationship("User", back_populates="generated_titles")
 
+class Thumbnail(Base):
+    __tablename__ = "thumbnails"
+    id = Column(Integer, primary_key=True, index=True)
+    video_id = Column(String, unique=False, nullable=False)
+    title = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    saved_path = Column(String, nullable=True)
+    text_detection = Column(JSON, nullable=True)
+    face_detection = Column(Integer, nullable=True)
+    emotion = Column(String, nullable=True)
+    color_palette = Column(JSON, nullable=True)
+    keyword = Column(Text)
+    
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user = relationship("User", back_populates="saved_thumbnails")
+
+class Script(Base):
+    __tablename__ = "scripts"
+    id = Column(Integer, primary_key=True, index=True)
+    input_title = Column(String, nullable=False)
+    video_title = Column(String, nullable=True)
+    mode = Column(String, nullable=False)
+    style = Column(String, nullable=False)
+    transcript = Column(Text, nullable=False)
+    generated_script = Column(Text, nullable=False)
+    youtube_links = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user = relationship("User", back_populates="generated_script")
+
+class RemixedScript(Base):
+    __tablename__ = "remixed_scripts"
+    id = Column(Integer, primary_key=True, index=True)
+    video_url = Column(String, unique=False, index=True)
+    mode = Column(String)
+    style = Column(String)
+    transcript = Column(Text)
+    remixed_script = Column(Text)
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user = relationship("User", back_populates="remixed_script")
+
 class Document(Base):
     __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, unique=True, nullable=False)
     content = Column(Text, nullable=False)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+    group = relationship("Group", back_populates="documents")
+
+class YouTubeVideo(Base):
+    __tablename__ = "youtube_videos"
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+    group = relationship("Group", back_populates="videos")
+
+class Chat(Base):
+    __tablename__ = "chats"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    query = Column(Text)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+    group = relationship("Group", back_populates="chats")
