@@ -5,6 +5,14 @@ from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, Fore
 
 Base = declarative_base()
 
+chat_group_association = Table(
+    "chat_group_association",
+    Base.metadata,
+    Column("chat_id", ForeignKey("chats.id"), primary_key=True),
+    Column("group_id", ForeignKey("groups.id"), primary_key=True)
+)
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -27,7 +35,7 @@ class Group(Base):
     project = relationship("Project", back_populates="groups", passive_deletes=True)
     documents = relationship("Document", back_populates="group", cascade="all, delete-orphan")
     videos = relationship("YouTubeVideo", back_populates="group", cascade="all, delete-orphan")
-    chats = relationship("Chat", back_populates="group", cascade="all, delete-orphan")
+    chats = relationship("Chat", secondary=chat_group_association, back_populates="groups")
 
     user = relationship("User", back_populates="groups", passive_deletes=True)
 
@@ -49,7 +57,7 @@ class User(Base):
     generated_titles = relationship("GeneratedTitle", back_populates="user", cascade="all, delete-orphan")
     groups = relationship("Group", back_populates="user", cascade="all, delete-orphan")
     projects = relationship("Project", backref="user", cascade="all, delete-orphan")
-    chats = relationship("Chat", backref="user")
+    chats = relationship("Chat", back_populates="user", cascade="all, delete-orphan")
 
 class UserLoginHistory(Base):
     __tablename__ = "user_login_history"
@@ -178,7 +186,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String, unique=True, nullable=False)
+    filename = Column(String,nullable=True)
     content = Column(Text, nullable=False)
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 
@@ -188,6 +196,7 @@ class YouTubeVideo(Base):
     __tablename__ = "youtube_videos"
     id = Column(Integer, primary_key=True, index=True)
     url = Column(String)
+    transcript = Column(Text)  
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 
     group = relationship("Group", back_populates="videos")
@@ -197,8 +206,12 @@ class Chat(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     query = Column(Text)
+    response_text = Column(Text)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    
+    user = relationship("User", back_populates="chats")
+    groups = relationship("Group", secondary=chat_group_association, back_populates="chats")
 
 
-    group = relationship("Group", back_populates="chats")
+
+   

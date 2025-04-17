@@ -1,8 +1,12 @@
 from sqlalchemy.orm import Session
 from database.models import Chat
 
-def create_chat(name: str, db: Session, user_id: int, query: str, group_id: int = None):
-    chat = Chat(name=name, query=query, user_id=user_id, group_id=group_id)
+def create_chat(name: str, db: Session, user_id: int, group_id: int = None):
+    chat = Chat(
+        name=name,
+        user_id=user_id,
+        group_id=group_id
+    )
     db.add(chat)
     db.commit()
     db.refresh(chat)

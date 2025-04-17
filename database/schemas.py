@@ -30,8 +30,10 @@ class KnowledgeUpload(BaseModel):
     document_names: List[str] = []
 
 class ChatCreate(BaseModel):
-    query: str
-    group_name: Optional[str] = None
+    name: str
+    group_ids: List[int] = []
 
 class ChatUpdate(BaseModel):
     name: Optional[str] = None
+
+    
