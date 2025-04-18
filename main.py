@@ -2,7 +2,7 @@ import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.db_connection import init_db, engine, Base
-from routes import script, thumbnail, viral_idea_finder, title_generation, group, knowledge, chat, project
+from routes import  thumbnail, viral_idea_finder, title_generation, group, knowledge, chat, project
 
 Base.metadata.create_all(bind=engine)
 
@@ -29,7 +29,7 @@ app.include_router(title_generation.router, prefix="/title_generation", tags=["T
 
 app.include_router(thumbnail.thumbnail_router, prefix="/thumbnails", tags=["Thumbnail Finder and Validator"])
 
-app.include_router(script.script_router, prefix="/script", tags=["Script Generation"])
+# app.include_router(script.script_router, prefix="/script", tags=["Script Generation"])
 
 
 app.include_router(project.project_router, tags=["Project"])
