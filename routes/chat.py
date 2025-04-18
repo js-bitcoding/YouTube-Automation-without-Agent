@@ -1,13 +1,55 @@
 from fastapi import APIRouter, Depends ,HTTPException
 from sqlalchemy.orm import Session
-from database.models import User,Group,Chat,chat_group_association
+from database.models import User,Group,Chat,chat_group_association,ChatSession
 from database.schemas import ChatCreate, ChatUpdate
 from service.chat_service import create_chat, update_chat, delete_chat, list_chats
+from langchain_community.llms import Ollama
 from database.db_connection import get_db
 from functionality.current_user import get_current_user
 from service.chat_ai_agent_service import fetch_group_data,agent
-
+import datetime
 chat_router = APIRouter(prefix="/chats")
+
+
+# @chat_router.post("/create")
+# def create_chat_api(
+#     payload: ChatCreate,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     # Deduplicate group_ids to avoid integrity errors
+#     unique_group_ids = list(set(payload.group_ids))
+
+#     # Fetch the groups from the database
+#     groups = db.query(Group).filter(Group.id.in_(unique_group_ids)).all()
+
+#     # Create a new Chat instance
+#     chat = Chat(
+#         name=payload.name,
+#         user_id=current_user.id
+#     )
+
+#     # Add the chat to the session
+#     db.add(chat)
+#     db.commit()  # Commit to get chat.id populated
+
+#     # Now that the chat has been added and has a chat.id, check for existing associations
+#     existing_association_set = set(
+#         (existing.chat_id, existing.group_id)
+#         for existing in db.query(chat_group_association).filter(chat_group_association.c.chat_id == chat.id).all()
+#     )
+
+#     # Add only the groups that aren't already associated
+#     for group in groups:
+#         # If the association doesn't exist, add it to the chat
+#         if (chat.id, group.id) not in existing_association_set:
+#             chat.groups.append(group)
+
+#     # Commit the final changes
+#     db.commit()
+#     db.refresh(chat)
+
+#     return chat
 
 
 @chat_router.post("/create")
@@ -16,35 +58,43 @@ def create_chat_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Deduplicate group_ids to avoid integrity errors
+    # Deduplicate group_ids
     unique_group_ids = list(set(payload.group_ids))
 
-    # Fetch the groups from the database
+    # Fetch groups
     groups = db.query(Group).filter(Group.id.in_(unique_group_ids)).all()
 
-    # Create a new Chat instance
+    # Create Chat
     chat = Chat(
         name=payload.name,
         user_id=current_user.id
     )
-
-    # Add the chat to the session
     db.add(chat)
-    db.commit()  # Commit to get chat.id populated
+    db.commit()
+    db.refresh(chat)  # get chat.id
 
-    # Now that the chat has been added and has a chat.id, check for existing associations
-    existing_association_set = set(
-        (existing.chat_id, existing.group_id)
-        for existing in db.query(chat_group_association).filter(chat_group_association.c.chat_id == chat.id).all()
-    )
-
-    # Add only the groups that aren't already associated
+    # Create one ChatSession per group
+    chat_sessions = []
     for group in groups:
-        # If the association doesn't exist, add it to the chat
-        if (chat.id, group.id) not in existing_association_set:
+        session = ChatSession(
+            chat_id=chat.id,
+            group_id=group.id
+        )
+        db.add(session)
+        chat_sessions.append(session)
+
+    db.commit()
+
+    # Optional: set chat.session_id to the first session created
+    if chat_sessions:
+        chat.session_id = chat_sessions[0].id
+        db.commit()
+
+    # Associate chat with all groups
+    for group in groups:
+        if group not in chat.groups:
             chat.groups.append(group)
 
-    # Commit the final changes
     db.commit()
     db.refresh(chat)
 
@@ -52,59 +102,185 @@ def create_chat_api(
 
 
 
+llm = Ollama(model="llama3.2:1b")
+
+
+def is_greeting(user_prompt: str) -> bool:
+    """
+    Detect if the user's prompt is a greeting or casual opener.
+    """
+    greetings = ["hello", "hi", "hey", "good morning", "good evening", "how are you", "yo", "sup"]
+    return user_prompt.strip().lower() in greetings
+
+
+# @chat_router.post("/generate_group_response")
+# def generate_group_response(
+#     chat_id: int,
+#     user_prompt: str,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     # Fetch chat
+#     chat = db.query(Chat).filter(Chat.id == chat_id).first()
+#     if not chat:
+#         raise HTTPException(status_code=404, detail="Chat not found")
+#     if chat.user_id != current_user.id:
+#         raise HTTPException(status_code=403, detail="You don't have access to this chat")
+
+#     # Fetch chat history
+#     history = db.query(ChatHistory)\
+#         .filter(ChatHistory.chat_id == chat_id)\
+#         .order_by(ChatHistory.timestamp.asc())\
+#         .all()
+
+#     history_prompt = "\n".join(f"{entry.sender}: {entry.message}" for entry in history)
+
+#     # Initialize these variables to ensure they exist in all paths
+#     group_ids = []
+#     group_info = {"formatted": "", "tones": [], "styles": []}
+
+#     # Handle casual greetings separately
+#     if is_greeting(user_prompt):
+#         full_prompt = f"""
+# You are a friendly AI assistant chatting with a user.
+
+# The user said: "{user_prompt}"
+
+# Respond in a warm, conversational way — say hello, offer help, and invite them to ask about group content.
+# """
+#     else:
+#         # Fetch group data, including tone and style metadata
+#         group_ids = [group.id for group in chat.groups]
+#         group_info = fetch_group_data(group_ids, db)
+
+#         if not group_info["formatted"]:
+#             raise HTTPException(status_code=404, detail="No content available for this chat")
+
+#         full_prompt = f"""
+# You are a helpful assistant having an ongoing conversation with a user.
+
+# The user is referring to content from multiple sources, each with different tone and style. Please synthesize and respond accordingly.
+# {group_info["formatted"]}
+
+# Conversation so far:
+# {history_prompt}
+
+# User: {user_prompt}
+# Assistant:
+# """
+
+#     # Call Ollama LLM
+#     try:
+#         response = llm(full_prompt)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
+
+#     # Avoid duplicate chat history entries
+#     if not db.query(ChatHistory).filter(
+#         ChatHistory.chat_id == chat_id,
+#         ChatHistory.sender == "User",
+#         ChatHistory.message == user_prompt.strip()
+#     ).first():
+#         db.add(ChatHistory(chat_id=chat_id, message=user_prompt.strip(), sender="User"))
+
+#     if not db.query(ChatHistory).filter(
+#         ChatHistory.chat_id == chat_id,
+#         ChatHistory.sender == "Assistant",
+#         ChatHistory.message == response.strip()
+#     ).first():
+#         db.add(ChatHistory(chat_id=chat_id, message=response.strip(), sender="Assistant"))
+
+#     db.commit()
+
+#     return {
+#         "response": response,
+#         "chat_id": chat_id,
+#         "user_message": user_prompt,
+#         "assistant_message": response,
+#         "based_on_groups": group_ids,
+#         "tone_used": ", ".join([tone.capitalize() for tone in group_info["tones"]]) if group_info["tones"] else "",
+#         "style_used": ", ".join([style.capitalize() for style in group_info["styles"]]) if group_info["styles"] else "",
+#         "history": [{"sender": h.sender, "message": h.message, "timestamp": h.timestamp} for h in history] + [
+#             {"sender": "User", "message": user_prompt},
+#             {"sender": "Assistant", "message": response}
+#         ]
+#     }
 
 
 @chat_router.post("/generate_group_response")
 def generate_group_response(
-    chat_id: int,         # Chat ID to fetch associated group data
-    user_prompt: str,     # User prompt for the agent to process
-    db: Session = Depends(get_db),  # Dependency to get the DB session
-    current_user: User = Depends(get_current_user)  # Dependency to get current user
+    chat_id: int,
+    user_prompt: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """
-    API endpoint to process group data and generate a response based on user prompt.
-    - Fetches the relevant content (from Document or YouTubeVideo) based on the groups associated with the chat_id.
-    - Uses the agent to generate a response based on that content and user prompt.
-    """
-
-    # Step 1: Fetch the chat
     chat = db.query(Chat).filter(Chat.id == chat_id).first()
-
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have access to this chat")
 
-    # Step 2: Get the group IDs from the associated groups
+    chat_session = db.query(ChatSession).filter(ChatSession.chat_id == chat_id).first()
+    if not chat_session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    chat.chatsession_id = chat_session.id
+
     group_ids = [group.id for group in chat.groups]
+    group_info = fetch_group_data(group_ids, db)
 
-    if not group_ids:
-        raise HTTPException(status_code=404, detail="No groups associated with this chat")
+    if not group_info["formatted"]:
+        raise HTTPException(status_code=404, detail="No content available for this chat")
 
-    # Step 3: Fetch the relevant group data (documents or video transcripts)
-    group_data = fetch_group_data(group_ids, db)
+    # Get conversation history from session
+    history = chat_session.conversation or []
 
-    if not group_data:
-        raise HTTPException(status_code=404, detail="No data found for the given groups")
+    history_prompt = "\n".join(f"{entry['sender']}: {entry['message']}" for entry in history)
 
-    # Debugging: print the group_data and user_prompt to make sure it's correct
-    print("Group Data:", group_data)
-    print("User Prompt:", user_prompt)
+    full_prompt = f"""
+You are a helpful assistant having an ongoing conversation with a user.
 
-    # Combine group data and user prompt into a single input
-    full_input = f"Here is some content:\n{group_data}\n\nNow, answer the following prompt:\n{user_prompt}"
+The user is referring to content from multiple sources, each with different tone and style. Please synthesize and respond accordingly.
+{group_info["formatted"]}
 
-    # Check for sensitive or prohibited content in the group_data
-    prohibited_keywords = ["illegal", "exploit", "harmful", "abuse"]
-    if any(keyword in group_data.lower() for keyword in prohibited_keywords):
-        raise HTTPException(status_code=400, detail="Content contains prohibited keywords")
+Conversation so far:
+{history_prompt}
 
-    # Step 4: Call the agent to generate a response based on the full input
+User: {user_prompt}
+Assistant:
+"""
+
     try:
-        response = agent.invoke({"input": full_input})
+        response = llm(full_prompt)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error with agent execution: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
-    # Return the AI-generated response
-    return {"response": response}
+    # Update Chat fields
+    chat.query = user_prompt
+    chat.response_text = response.strip()
+
+    # Append conversation entries into session
+    timestamp = datetime.datetime.utcnow().isoformat()
+    chat_session.conversation.append(
+        {"sender": "User", "message": user_prompt.strip(), "timestamp": timestamp}
+    )
+    chat_session.conversation.append(
+        {"sender": "Assistant", "message": response.strip(), "timestamp": timestamp}
+    )
+
+    db.commit()
+
+    return {
+        "response": response,
+        "chat_id": chat_id,
+        "user_message": user_prompt,
+        "assistant_message": response,
+        "based_on_groups": group_ids,
+        "tone_used": ", ".join([tone.capitalize() for tone in group_info["tones"]]) if group_info["tones"] else "",
+        "style_used": ", ".join([style.capitalize() for style in group_info["styles"]]) if group_info["styles"] else "",
+        "history": chat_session.conversation
+    }
+
+
 
 @chat_router.put("/{chat_name}")
 def update_chat_api(chat_name: str, payload: ChatUpdate, db: Session = Depends(get_db)):

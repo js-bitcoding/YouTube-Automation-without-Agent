@@ -17,24 +17,48 @@ memory = ConversationBufferMemory(memory_key="chat_history", return_messages=Tru
 # Define the tools that will be used by the agent
 def fetch_group_data(group_ids: list, db: Session):
     """
-    Fetches relevant data from Group, Document, and YouTubeVideo based on group_ids.
+    Returns both the formatted string for the LLM and metadata (tone/style info).
     """
-    group_data = []
+    formatted_sections = []
+    tone_set = set()
+    style_set = set()
+
     for group_id in group_ids:
         group = db.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            continue
 
-        if group:
-            # Check if the group has related documents or videos
-            if group.documents:
-                document = db.query(Document).filter(Document.group_id == group_id).first()
-                if document:
-                    group_data.append(f"Document Title: {document.filename}\nContent: {document.content}\n")
-            elif group.videos:
-                video = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).first()
-                if video:
-                    group_data.append(f"Video URL: {video.url}\nTranscript: {video.transcript}\n")
+        section = [f"\n📚 Group: {group.name or 'Unnamed Group'} (ID: {group.id})"]
 
-    return "\n".join(group_data)
+        documents = db.query(Document).filter(Document.group_id == group_id).all()
+        for doc in documents:
+            summary = doc.content[:300].strip().replace("\n", " ")
+            section.append(f"📄 Document: {doc.filename}\n📝 Summary: {summary}...\n")
+
+        videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
+        for video in videos:
+            summary = video.transcript[:300].strip().replace("\n", " ")
+            tone = video.tone or "Unknown"
+            style = video.style or "Unknown"
+
+            tone_set.add(tone.lower())
+            style_set.add(style.lower())
+
+            section.append(
+                f"🎥 Video: {video.url}\n🗒️ Transcript Snippet: {summary}...\n"
+                f"🎙️ Tone: {tone.capitalize()}, ✍️ Style: {style.capitalize()}\n"
+            )
+
+        if len(section) > 1:
+            formatted_sections.append("\n".join(section))
+
+    return {
+        "formatted": "\n\n".join(formatted_sections),
+        "tones": list(tone_set),
+        "styles": list(style_set)
+    }
+
+
 
 # Define the tool for the agent
 def generate_response_from_prompt_and_data(group_data: str, user_prompt: str):

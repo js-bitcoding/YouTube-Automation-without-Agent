@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional,Union
 import requests
 import datetime, os
-from database.models import Group, Document, RemixedScript, Project, User,YouTubeVideo
+from database.models import Group, Document,  Project, User,YouTubeVideo
 from functionality.current_user import get_current_user
 from config import UPLOAD_FOLDER
 from sqlalchemy.orm import Session
@@ -115,11 +115,16 @@ async def knowledge_api(
                         "error": f"Transcript extraction failed: {err}"
                     })
                     continue
+                analysis = analyze_transcript_style(transcript)
+                tone = analysis.get("tone", "Unknown")
+                style = analysis.get("style", "Unknown")
 
                 youtube_entry = YouTubeVideo(
                     url=link,
                     group_id=group_id,
-                    transcript=transcript
+                    transcript=transcript,
+                    tone=tone,
+                    style=style
                 )
                 db.add(youtube_entry)
                 db.commit()
@@ -128,7 +133,9 @@ async def knowledge_api(
                 results["videos"].append({
                     "video_url": link,
                     "message": "Transcript extracted and link saved",
-                    "transcript_excerpt": transcript[:300]  # optional preview
+                    "transcript_excerpt": transcript[:300],  # optional preview
+                    "style":style,
+                    "tone":tone
                 })
 
             except Exception as e:

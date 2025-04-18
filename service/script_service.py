@@ -56,7 +56,7 @@ def analyze_transcript_style(transcript: str):
             if line.lower().startswith("tone:"):
                 tone = line.split(":", 1)[1].strip()
                 print(f"Tone:::{tone}")
-        return style, tone
+        return {"tone": tone, "style": style}
     return "Casual", "Casual"
 
 # def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casual", style: str = "Casual"):
@@ -404,3 +404,5 @@ def extract_text_from_docx(file_path: str) -> str:
     doc = DocxDocument(file_path)
     text = "\n".join([para.text for para in doc.paragraphs])
     return text.strip()
+
+
