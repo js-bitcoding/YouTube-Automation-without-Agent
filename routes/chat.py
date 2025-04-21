@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session,joinedload
 from database.db_connection import get_db
 from langchain_community.llms import Ollama
 from database.schemas import ChatCreate, ChatUpdate
@@ -82,10 +82,15 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
 
 @chat_router.get("/conversations")
 def get_all_conversations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+    get_all_cov = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
         Group.user_id == current_user.id,
         ChatConversation.is_deleted == False
     ).all()
+
+    if not get_all_cov:
+        raise HTTPException(status_code=400, detail="No Conversation Found")
+    
+    return get_all_cov
 
 @chat_router.post("/conversations")
 def create_conversation(
@@ -128,22 +133,41 @@ def update_conversation_name(
     return {"message": "Conversation name updated"}
 
 
+
 @chat_router.get("/conversations/{conversation_id}")
 def get_conversation_by_id(
     conversation_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+    # Query with eager loading of chat histories
+    convo = db.query(ChatConversation).options(
+        joinedload(ChatConversation.chats)  # Load chat histories
+    ).join(ChatSession).join(chat_session_group).join(Group).filter(
         ChatConversation.id == conversation_id,
-        Group.user_id == current_user.id
+        Group.user_id == current_user.id,
+        ChatConversation.is_deleted == False
     ).first()
 
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
-    
-    return convo
 
+    # Format the result to include conversation + chat histories
+    return {
+        "conversation_id": convo.id,
+        "name": convo.name,
+        "created_at": convo.created_at,
+        "updated_at": convo.updated_at,
+        "chats": [
+            {
+                "chat_id": chat.id,
+                "query": chat.query,
+                "response": chat.response,
+                "created_at": chat.created_at
+            }
+            for chat in convo.chats if not chat.is_deleted
+        ]
+    }
 
 
 @chat_router.delete("/conversations/{conversation_id}")
@@ -164,49 +188,52 @@ def delete_conversation(
     db.commit()
     return {"message": "Conversation deleted"}
 
-@chat_router.get("/chats")
-def get_user_chats(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    chats = db.query(
-        ChatHistory.id.label("chat_id"),
-        ChatHistory.chat_conversation_id
-    ).filter(
-        ChatHistory.user_id == current_user.id,
-        ChatHistory.is_deleted == False
-    ).order_by(ChatHistory.created_at.asc()).all()
+# @chat_router.get("/chats")
+# def get_user_chats(
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     chats = db.query(
+#         ChatHistory.id.label("chat_id"),
+#         ChatHistory.chat_conversation_id
+#     ).filter(
+#         ChatHistory.user_id == current_user.id,
+#         ChatHistory.is_deleted == False
+#     ).order_by(ChatHistory.created_at.asc()).all()
 
-    return [{"chat_id": chat.chat_id, "chat_conversation_id": chat.chat_conversation_id} for chat in chats]
-
-@chat_router.get("/chats/{chat_id}")
-def get_chat_by_id(
-    chat_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    chat = db.query(ChatHistory).filter(
-        ChatHistory.id == chat_id,
-        ChatHistory.user_id == current_user.id,  # Auth check here
-        ChatHistory.is_deleted == False
-    ).first()
+#     if not chats:
+#         raise HTTPException(status_code=404, detail="Chat not found or unauthorized access")
     
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found or unauthorized access")
+#     return [{"chat_id": chat.chat_id, "chat_conversation_id": chat.chat_conversation_id} for chat in chats]
 
-    return {
-        "chat_id": chat.id,
-        "query": chat.query,
-        "response": chat.response,
-        "context": chat.context,
-        "created_at": chat.created_at,
-        "conversation_id": chat.chat_conversation_id,
-        "instruction": {
-            "id": chat.instruction.id if chat.instruction else None,
-            "name": chat.instruction.name if chat.instruction else None,
-            "content": chat.instruction.content if chat.instruction else None
-        } if chat.instruction else None
-    }
+# @chat_router.get("/chats/{chat_id}")
+# def get_chat_by_id(
+#     chat_id: int,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     chat = db.query(ChatHistory).filter(
+#         ChatHistory.id == chat_id,
+#         ChatHistory.user_id == current_user.id,  # Auth check here
+#         ChatHistory.is_deleted == False
+#     ).first()
+    
+#     if not chat:
+#         raise HTTPException(status_code=404, detail="Chat not found or unauthorized access")
+
+#     return {
+#         "chat_id": chat.id,
+#         "query": chat.query,
+#         "response": chat.response,
+#         "context": chat.context,
+#         "created_at": chat.created_at,
+#         "conversation_id": chat.chat_conversation_id,
+#         "instruction": {
+#             "id": chat.instruction.id if chat.instruction else None,
+#             "name": chat.instruction.name if chat.instruction else None,
+#             "content": chat.instruction.content if chat.instruction else None
+#         } if chat.instruction else None
+#     }
 
 # --- Chat Response Generation ---
 
@@ -227,5 +254,5 @@ def generate_group_response(
     user_prompt: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+):        
     return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)

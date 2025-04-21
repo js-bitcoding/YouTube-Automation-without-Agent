@@ -57,4 +57,4 @@ def list_projects(db: Session, user_id: int):
     return db.query(Project).filter(
         Project.user_id == user_id,
         Project.is_deleted == False
-        ).all()
+    ).all()

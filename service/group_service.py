@@ -107,7 +107,8 @@ async def process_group_content(
                     group_id=group_id,
                     transcript=transcript,
                     tone=tone,
-                    style=style
+                    style=style,
+                    is_deleted=False
                 )
                 db.add(youtube_entry)
                 db.commit()
@@ -193,7 +194,10 @@ def delete_group(db: Session, group_id: int, user_id: int):
         return None
 
 def get_user_groups_with_content(user_id: int, db: Session):
-    groups = db.query(Group).filter(Group.user_id == user_id).all()
+    groups = db.query(Group).filter(
+        Group.user_id == user_id,
+        Group.is_deleted == False  # Groups that are not deleted
+    ).all()
 
     if not groups:
         raise HTTPException(status_code=404, detail="No groups found for this user.")
@@ -208,12 +212,14 @@ def get_user_groups_with_content(user_id: int, db: Session):
             "group_name": group.name,
             "project_id": group.project_id,
             "documents": [
-                {"filename": doc.filename, "content_snippet": doc.content[:300]} for doc in documents
+                {   "document id":doc.id,
+                    "filename": doc.filename, "content_snippet": doc.content} for doc in documents
             ],
             "videos": [
                 {
+                    "videos id" : vid.id,
                     "video_url": vid.url,
-                    "transcript_excerpt": vid.transcript[:300],
+                    "transcript_excerpt": vid.transcript,
                     "tone": vid.tone,
                     "style": vid.style
                 }

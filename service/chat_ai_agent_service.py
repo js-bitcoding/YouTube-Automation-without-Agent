@@ -188,7 +188,7 @@ from langchain.memory import ConversationBufferMemory
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
-from database.models import Group, Document, YouTubeVideo, ChatConversation, ChatHistory, User
+from database.models import Group, Document, YouTubeVideo, ChatConversation, ChatHistory, User,Instruction
 
 # Initialize the Ollama LLM
 llm = Ollama(model="llama3.2:1b")  # Ollama model
@@ -268,7 +268,7 @@ def initialize_faiss_store(documents: list):
     # Create FAISS vector store with chunked documents
     vectorstore = FAISS.from_documents(all_chunks, ollama_embeddings)
     print(f"Vectorstore created with {len(all_chunks)} chunks.")
-    return vectorstore
+    return vectorstore, all_chunks
 
 # Define the tool for the agent
 def generate_response_from_prompt_and_data(group_data: str, user_prompt: str):
@@ -301,13 +301,24 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
         raise HTTPException(status_code=404, detail="No content available for this chat")
 
     # Initialize FAISS vector store for document retrieval
-    vectorstore = initialize_faiss_store(group_info["documents"])
+    # Initialize FAISS vector store and get chunked documents
+    vectorstore, all_chunks = initialize_faiss_store(group_info["documents"])
+
+# Get top N chunks to inject into the LLM directly
+    max_chunks = 10  # Adjust based on model token limits
+    chunked_text = "\n\n".join([chunk.page_content for chunk in all_chunks[:max_chunks]])
+
 
     # Get chat history
     history_records = db.query(ChatHistory).filter(
         ChatHistory.chat_conversation_id == conversation.id,
         ChatHistory.is_deleted == False
     ).order_by(ChatHistory.created_at.asc()).all()
+
+    instructions = db.query(Instruction).filter(
+        Instruction.is_deleted == False,
+        Instruction.is_activate == True  # Fetch instructions that are globally activated
+    ).all()
 
     history_prompt = ""
     for record in history_records:
@@ -320,21 +331,41 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
     # Combine the group content (from documents and videos) and retrieval results
     retrieved_data = "\n\n".join([result.page_content for result in search_results])
 
+    instructions_info = "\n".join([f" Instruction: {instr.content}" for instr in instructions])
+    print("Group Info",group_info)
+    print("Retrieve Data",retrieved_data)
     full_prompt = f"""
-You are a helpful assistant having an ongoing conversation with a user.
+You are a highly capable and context-aware assistant helping a user with information from documents, videos, and previous conversations. Use the instructions and retrieved knowledge to respond in a helpful, clear, and tone-adaptive manner.
 
-The user is referring to content from multiple sources, each with different tone and style. Please synthesize and respond accordingly.
+##  Active User Instructions:
+{instructions_info or "None provided."}
+
+##  Primary Context (Documents & Video Transcripts):
+The following is background information from the user’s selected groups. Use it to understand the broader context, tone, and style. Incorporate relevant information, but do not repeat it verbatim unless directly relevant.
+
 {group_info["formatted"]}
 
-Retrieved content:
-{retrieved_data}
+These are raw extracted chunks from your documents, chunked for better context understanding.
+{chunked_text}
 
-Conversation so far:
+##  Communication Style Guidance:
+The content involves various tones and styles:
+- Tones: {", ".join(group_info["tones"]).capitalize() or "Neutral"}
+- Styles: {", ".join(group_info["styles"]).capitalize() or "Plain"}
+
+Match your response tone and style to align with these.
+
+##  Chat History:
+Maintain conversational continuity. Refer to prior user and assistant messages as needed.
+
 {history_prompt}
 
-User: {user_prompt}
-Assistant:
+## 📩 User Prompt:
+{user_prompt}
+
+## 🤖 Assistant Response:
 """
+
 
     # Generate response using the LLM
     try:

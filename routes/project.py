@@ -41,15 +41,21 @@ def list_projects_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    projects = list_projects(db, user_id=user.id)
-    
+    projects = db.query(Project).filter(
+        Project.user_id == user.id,
+        Project.is_deleted == False
+    ).all()
+
     if not projects:
-        raise HTTPException(status_code=404, detail="No projects found for the user")
-    
-    return {"projects": [
-        {
-            "id": project.id,
-            "name": project.name,
-            "created_time": project.created_time
-        } for project in projects
-    ]}
+        raise HTTPException(status_code=404, detail="No projects found for this user.")
+
+    return {
+        "projects": [
+            {
+                "id": project.id,
+                "name": project.name,
+                "created_time": project.created_time
+            }
+            for project in projects
+        ]
+    }

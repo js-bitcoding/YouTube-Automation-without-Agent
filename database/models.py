@@ -19,13 +19,13 @@ class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
     created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     is_deleted = Column(Boolean, default=False)
 
     groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
-    user = relationship("User", back_populates="projects", passive_deletes=True)
+    
 
 class Group(Base):
     __tablename__ = "groups"
@@ -67,7 +67,7 @@ class User(Base):
     groups = relationship("Group", back_populates="user", cascade="all, delete-orphan")
     projects = relationship("Project", backref="user", cascade="all, delete-orphan")
     chats = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
-
+    instructions = relationship("Instruction", back_populates="user", cascade="all, delete-orphan")
 class UserLoginHistory(Base):
     __tablename__ = "user_login_history"
  
@@ -197,8 +197,12 @@ class Instruction(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    is_activate = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False) 
-    chats = relationship("ChatHistory", back_populates="instruction", cascade="all, delete-orphan")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user = relationship("User", back_populates="instructions")
+    conversations = relationship("ChatConversation", back_populates="instruction", cascade="all, delete-orphan")
+
 
 class ChatHistory(Base): 
     __tablename__ = "chat_histories"
@@ -211,10 +215,10 @@ class ChatHistory(Base):
     is_deleted = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))  # ✅ Add this
 
-    instruction_id = Column(Integer, ForeignKey("instructions.id", ondelete="SET NULL"))
+    #instruction_id = Column(Integer, ForeignKey("instructions.id", ondelete="SET NULL"))
     chat_conversation_id = Column(Integer, ForeignKey("chat_conversations.id", ondelete="CASCADE"))
     user = relationship("User", back_populates="chats")
-    instruction = relationship("Instruction", back_populates="chats")
+    #instruction = relationship("Instruction", back_populates="chats")
     conversation = relationship("ChatConversation", back_populates="chats")
 
 class ChatConversation(Base):  
@@ -225,8 +229,10 @@ class ChatConversation(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     is_deleted = Column(Boolean, default=False)
-
+    instruction_id = Column(Integer, ForeignKey("instructions.id", ondelete="SET NULL"))
     chat_session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"))
+    instruction = relationship("Instruction", back_populates="conversations")
+
     session = relationship("ChatSession", back_populates="conversations")
     chats = relationship("ChatHistory", back_populates="conversation", cascade="all, delete-orphan")
 
