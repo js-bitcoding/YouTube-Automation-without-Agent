@@ -1,31 +1,68 @@
+import datetime
+from typing import Optional
 from sqlalchemy.orm import Session
-from database.models import Chat
+from database.models import ChatHistory, ChatConversation, ChatSession,Group
 
-def create_chat(name: str, db: Session, user_id: int, group_id: int = None):
-    chat = Chat(
-        name=name,
-        user_id=user_id,
-        group_id=group_id
-    )
-    db.add(chat)
+
+def create_chat(
+    name: str,
+    db: Session,
+    user_id: int,
+    group_ids: list[int]
+):
+    # Create new chat session
+    session = ChatSession(name=name)
+    session.created_at = datetime.datetime.utcnow()
+    session.updated_at = datetime.datetime.utcnow()
+    db.add(session)
     db.commit()
-    db.refresh(chat)
-    return chat
+    db.refresh(session)
 
-def update_chat(db: Session, chat_id: int, name: str):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-    if chat:
-        chat.name = name or chat.name
+    # Associate groups with session (many-to-many)
+    groups = db.query(Group).filter(Group.id.in_(group_ids)).all()
+    session.groups.extend(groups)
+    db.commit()
+
+    # Create chat conversation
+    conversation = ChatConversation(
+        name=name,
+        chat_session_id=session.id,
+        created_at=datetime.datetime.utcnow(),
+        updated_at=datetime.datetime.utcnow()
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
+    return conversation
+
+
+def update_chat(db: Session, conversation_id: int, name: Optional[str] = None):
+    conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
+    if conversation:
+        if name:
+            conversation.name = name
+        conversation.updated_at = datetime.datetime.utcnow()
         db.commit()
-        db.refresh(chat)
-    return chat
+        db.refresh(conversation)
+    return conversation
 
-def delete_chat(db: Session, chat_id: int):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-    if chat:
-        db.delete(chat)
+
+def delete_chat(db: Session, conversation_id: int):
+    conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
+    if conversation:
+        conversation.is_deleted = True
+        conversation.updated_at = datetime.datetime.utcnow()
         db.commit()
-    return chat
+    return conversation
 
-def list_chats(db: Session, user_id: int):
-    return db.query(Chat).filter(Chat.user_id == user_id).all()
+
+def list_user_conversations(db: Session, user_id: int):
+    # Assumes conversations are linked via ChatSession and Group → User
+    return (
+        db.query(ChatConversation)
+        .join(ChatSession)
+        .join(ChatSession.groups)
+        .filter(Group.user_id == user_id, ChatConversation.is_deleted == False)
+        .all()
+    )

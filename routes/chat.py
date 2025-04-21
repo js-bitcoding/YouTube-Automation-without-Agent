@@ -1,58 +1,28 @@
-from fastapi import APIRouter, Depends ,HTTPException
-from sqlalchemy.orm import Session
-from database.models import User,Group,Chat,chat_group_association,ChatSession
-from database.schemas import ChatCreate, ChatUpdate
-from service.chat_service import create_chat, update_chat, delete_chat, list_chats
-from langchain_community.llms import Ollama
-from database.db_connection import get_db
-from functionality.current_user import get_current_user
-from service.chat_ai_agent_service import fetch_group_data,agent
 import datetime
+from sqlalchemy.orm import Session
+from database.db_connection import get_db
+from langchain_community.llms import Ollama
+from database.schemas import ChatCreate, ChatUpdate
+from fastapi import APIRouter, Depends ,HTTPException
+from functionality.current_user import get_current_user
+from service.chat_service import create_chat, update_chat, delete_chat, list_user_conversations
+from service.chat_ai_agent_service import generate_response_for_conversation
+from database.models import User,Group,ChatConversation,ChatSession,ChatHistory,chat_session_group
+
 chat_router = APIRouter(prefix="/chats")
 
-
-# @chat_router.post("/create")
-# def create_chat_api(
-#     payload: ChatCreate,
-#     db: Session = Depends(get_db),
-#     current_user: User = Depends(get_current_user)
-# ):
-#     # Deduplicate group_ids to avoid integrity errors
-#     unique_group_ids = list(set(payload.group_ids))
-
-#     # Fetch the groups from the database
-#     groups = db.query(Group).filter(Group.id.in_(unique_group_ids)).all()
-
-#     # Create a new Chat instance
-#     chat = Chat(
-#         name=payload.name,
-#         user_id=current_user.id
-#     )
-
-#     # Add the chat to the session
-#     db.add(chat)
-#     db.commit()  # Commit to get chat.id populated
-
-#     # Now that the chat has been added and has a chat.id, check for existing associations
-#     existing_association_set = set(
-#         (existing.chat_id, existing.group_id)
-#         for existing in db.query(chat_group_association).filter(chat_group_association.c.chat_id == chat.id).all()
-#     )
-
-#     # Add only the groups that aren't already associated
-#     for group in groups:
-#         # If the association doesn't exist, add it to the chat
-#         if (chat.id, group.id) not in existing_association_set:
-#             chat.groups.append(group)
-
-#     # Commit the final changes
-#     db.commit()
-#     db.refresh(chat)
-
-#     return chat
+@chat_router.get("/sessions")
+def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sessions = db.query(ChatSession).join(chat_session_group).join(Group).filter(
+        Group.user_id == current_user.id,
+        ChatSession.is_deleted == False
+    ).all()
+    if not sessions:
+        raise HTTPException(status_code=404, detail="⚠️ No chat sessions found for this user.")
+    return sessions
 
 
-@chat_router.post("/create")
+@chat_router.post("/sessions")
 def create_chat_api(
     payload: ChatCreate,
     db: Session = Depends(get_db),
@@ -61,235 +31,201 @@ def create_chat_api(
     # Deduplicate group_ids
     unique_group_ids = list(set(payload.group_ids))
 
-    # Fetch groups
-    groups = db.query(Group).filter(Group.id.in_(unique_group_ids)).all()
+    # Fetch groups that belong to the current user
+    groups = db.query(Group).filter(Group.id.in_(unique_group_ids), Group.user_id == current_user.id).all()
 
-    # Create Chat
-    chat = Chat(
+    if not groups:
+        raise HTTPException(status_code=400, detail="No valid groups found for the user")
+
+    # Create ChatSession (shared across groups)
+    chat_session = ChatSession(
         name=payload.name,
-        user_id=current_user.id
     )
-    db.add(chat)
+    db.add(chat_session)
     db.commit()
-    db.refresh(chat)  # get chat.id
+    db.refresh(chat_session)
 
-    # Create one ChatSession per group
-    chat_sessions = []
-    for group in groups:
-        session = ChatSession(
-            chat_id=chat.id,
-            group_id=group.id
-        )
-        db.add(session)
-        chat_sessions.append(session)
-
+    # Associate ChatSession with groups
+    chat_session.groups.extend(groups)
     db.commit()
 
-    # Optional: set chat.session_id to the first session created
-    if chat_sessions:
-        chat.session_id = chat_sessions[0].id
-        db.commit()
-
-    # Associate chat with all groups
-    for group in groups:
-        if group not in chat.groups:
-            chat.groups.append(group)
-
+    # Create ChatConversation for the session
+    chat_conversation = ChatConversation(
+        name=payload.name,
+        chat_session_id=chat_session.id,
+    )
+    db.add(chat_conversation)
     db.commit()
-    db.refresh(chat)
+    db.refresh(chat_conversation)
 
-    return chat
+    return {
+        "chat_session_id": chat_session.id,
+        "conversation_id": chat_conversation.id,
+        "associated_group_ids": [g.id for g in groups]
+    }
+
+@chat_router.delete("/sessions/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
+        ChatSession.id == session_id,
+        Group.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or unauthorized access")
+    
+    session.is_deleted = True
+    db.commit()
+    return {"message": "Session deleted"}
 
 
 
-llm = Ollama(model="llama3.2:1b")
+@chat_router.get("/conversations")
+def get_all_conversations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+        Group.user_id == current_user.id,
+        ChatConversation.is_deleted == False
+    ).all()
+
+@chat_router.post("/conversations")
+def create_conversation(
+    session_id: int,
+    name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
+        ChatSession.id == session_id,
+        Group.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or unauthorized access")
+
+    conversation = ChatConversation(name=name, chat_session_id=session_id)
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+@chat_router.put("/conversations/{conversation_id}")
+def update_conversation_name(
+    conversation_id: int,
+    name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+        ChatConversation.id == conversation_id,
+        Group.user_id == current_user.id
+    ).first()
+
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
+    
+    convo.name = name
+    db.commit()
+    return {"message": "Conversation name updated"}
 
 
-def is_greeting(user_prompt: str) -> bool:
-    """
-    Detect if the user's prompt is a greeting or casual opener.
-    """
-    greetings = ["hello", "hi", "hey", "good morning", "good evening", "how are you", "yo", "sup"]
-    return user_prompt.strip().lower() in greetings
+@chat_router.get("/conversations/{conversation_id}")
+def get_conversation_by_id(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+        ChatConversation.id == conversation_id,
+        Group.user_id == current_user.id
+    ).first()
 
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
+    
+    return convo
+
+
+
+@chat_router.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+        ChatConversation.id == conversation_id,
+        Group.user_id == current_user.id
+    ).first()
+    
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
+    
+    convo.is_deleted = True
+    db.commit()
+    return {"message": "Conversation deleted"}
+
+@chat_router.get("/chats")
+def get_user_chats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    chats = db.query(
+        ChatHistory.id.label("chat_id"),
+        ChatHistory.chat_conversation_id
+    ).filter(
+        ChatHistory.user_id == current_user.id,
+        ChatHistory.is_deleted == False
+    ).order_by(ChatHistory.created_at.asc()).all()
+
+    return [{"chat_id": chat.chat_id, "chat_conversation_id": chat.chat_conversation_id} for chat in chats]
+
+@chat_router.get("/chats/{chat_id}")
+def get_chat_by_id(
+    chat_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    chat = db.query(ChatHistory).filter(
+        ChatHistory.id == chat_id,
+        ChatHistory.user_id == current_user.id,  # Auth check here
+        ChatHistory.is_deleted == False
+    ).first()
+    
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found or unauthorized access")
+
+    return {
+        "chat_id": chat.id,
+        "query": chat.query,
+        "response": chat.response,
+        "context": chat.context,
+        "created_at": chat.created_at,
+        "conversation_id": chat.chat_conversation_id,
+        "instruction": {
+            "id": chat.instruction.id if chat.instruction else None,
+            "name": chat.instruction.name if chat.instruction else None,
+            "content": chat.instruction.content if chat.instruction else None
+        } if chat.instruction else None
+    }
+
+# --- Chat Response Generation ---
 
 # @chat_router.post("/generate_group_response")
 # def generate_group_response(
-#     chat_id: int,
+#     conversation_id: int,
 #     user_prompt: str,
 #     db: Session = Depends(get_db),
 #     current_user: User = Depends(get_current_user)
 # ):
-#     # Fetch chat
-#     chat = db.query(Chat).filter(Chat.id == chat_id).first()
-#     if not chat:
-#         raise HTTPException(status_code=404, detail="Chat not found")
-#     if chat.user_id != current_user.id:
-#         raise HTTPException(status_code=403, detail="You don't have access to this chat")
+#     return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
 
-#     # Fetch chat history
-#     history = db.query(ChatHistory)\
-#         .filter(ChatHistory.chat_id == chat_id)\
-#         .order_by(ChatHistory.timestamp.asc())\
-#         .all()
-
-#     history_prompt = "\n".join(f"{entry.sender}: {entry.message}" for entry in history)
-
-#     # Initialize these variables to ensure they exist in all paths
-#     group_ids = []
-#     group_info = {"formatted": "", "tones": [], "styles": []}
-
-#     # Handle casual greetings separately
-#     if is_greeting(user_prompt):
-#         full_prompt = f"""
-# You are a friendly AI assistant chatting with a user.
-
-# The user said: "{user_prompt}"
-
-# Respond in a warm, conversational way — say hello, offer help, and invite them to ask about group content.
-# """
-#     else:
-#         # Fetch group data, including tone and style metadata
-#         group_ids = [group.id for group in chat.groups]
-#         group_info = fetch_group_data(group_ids, db)
-
-#         if not group_info["formatted"]:
-#             raise HTTPException(status_code=404, detail="No content available for this chat")
-
-#         full_prompt = f"""
-# You are a helpful assistant having an ongoing conversation with a user.
-
-# The user is referring to content from multiple sources, each with different tone and style. Please synthesize and respond accordingly.
-# {group_info["formatted"]}
-
-# Conversation so far:
-# {history_prompt}
-
-# User: {user_prompt}
-# Assistant:
-# """
-
-#     # Call Ollama LLM
-#     try:
-#         response = llm(full_prompt)
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
-
-#     # Avoid duplicate chat history entries
-#     if not db.query(ChatHistory).filter(
-#         ChatHistory.chat_id == chat_id,
-#         ChatHistory.sender == "User",
-#         ChatHistory.message == user_prompt.strip()
-#     ).first():
-#         db.add(ChatHistory(chat_id=chat_id, message=user_prompt.strip(), sender="User"))
-
-#     if not db.query(ChatHistory).filter(
-#         ChatHistory.chat_id == chat_id,
-#         ChatHistory.sender == "Assistant",
-#         ChatHistory.message == response.strip()
-#     ).first():
-#         db.add(ChatHistory(chat_id=chat_id, message=response.strip(), sender="Assistant"))
-
-#     db.commit()
-
-#     return {
-#         "response": response,
-#         "chat_id": chat_id,
-#         "user_message": user_prompt,
-#         "assistant_message": response,
-#         "based_on_groups": group_ids,
-#         "tone_used": ", ".join([tone.capitalize() for tone in group_info["tones"]]) if group_info["tones"] else "",
-#         "style_used": ", ".join([style.capitalize() for style in group_info["styles"]]) if group_info["styles"] else "",
-#         "history": [{"sender": h.sender, "message": h.message, "timestamp": h.timestamp} for h in history] + [
-#             {"sender": "User", "message": user_prompt},
-#             {"sender": "Assistant", "message": response}
-#         ]
-#     }
-
+#RAG
 
 @chat_router.post("/generate_group_response")
 def generate_group_response(
-    chat_id: int,
+    conversation_id: int,
     user_prompt: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-    if chat.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You don't have access to this chat")
-
-    chat_session = db.query(ChatSession).filter(ChatSession.chat_id == chat_id).first()
-    if not chat_session:
-        raise HTTPException(status_code=404, detail="Chat session not found")
-    chat.chatsession_id = chat_session.id
-
-    group_ids = [group.id for group in chat.groups]
-    group_info = fetch_group_data(group_ids, db)
-
-    if not group_info["formatted"]:
-        raise HTTPException(status_code=404, detail="No content available for this chat")
-
-    # Get conversation history from session
-    history = chat_session.conversation or []
-
-    history_prompt = "\n".join(f"{entry['sender']}: {entry['message']}" for entry in history)
-
-    full_prompt = f"""
-You are a helpful assistant having an ongoing conversation with a user.
-
-The user is referring to content from multiple sources, each with different tone and style. Please synthesize and respond accordingly.
-{group_info["formatted"]}
-
-Conversation so far:
-{history_prompt}
-
-User: {user_prompt}
-Assistant:
-"""
-
-    try:
-        response = llm(full_prompt)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
-
-    # Update Chat fields
-    chat.query = user_prompt
-    chat.response_text = response.strip()
-
-    # Append conversation entries into session
-    timestamp = datetime.datetime.utcnow().isoformat()
-    chat_session.conversation.append(
-        {"sender": "User", "message": user_prompt.strip(), "timestamp": timestamp}
-    )
-    chat_session.conversation.append(
-        {"sender": "Assistant", "message": response.strip(), "timestamp": timestamp}
-    )
-
-    db.commit()
-
-    return {
-        "response": response,
-        "chat_id": chat_id,
-        "user_message": user_prompt,
-        "assistant_message": response,
-        "based_on_groups": group_ids,
-        "tone_used": ", ".join([tone.capitalize() for tone in group_info["tones"]]) if group_info["tones"] else "",
-        "style_used": ", ".join([style.capitalize() for style in group_info["styles"]]) if group_info["styles"] else "",
-        "history": chat_session.conversation
-    }
-
-
-
-@chat_router.put("/{chat_name}")
-def update_chat_api(chat_name: str, payload: ChatUpdate, db: Session = Depends(get_db)):
-    return update_chat(db, chat_name, payload.name)
-
-@chat_router.delete("/{chat_name}")
-def delete_chat_api(chat_name: str, db: Session = Depends(get_db)):
-    return delete_chat(db, chat_name)
-
-@chat_router.get("/list/{user_id}")
-def list_chats_api(user_id: int, db: Session = Depends(get_db)):
-    return list_chats(db, user_id)
+    return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
