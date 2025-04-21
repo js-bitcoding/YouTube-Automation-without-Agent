@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
+import datetime
 
 class UserRegister(BaseModel):
     username: str 
@@ -36,4 +37,22 @@ class ChatCreate(BaseModel):
 class ChatUpdate(BaseModel):
     name: Optional[str] = None
 
-    
+class InstructionBase(BaseModel):
+    name: str
+    content: str
+
+class InstructionCreate(InstructionBase):
+    pass
+
+class InstructionUpdate(BaseModel):
+    name: Optional[str] = None
+    content: Optional[str] = None
+
+class InstructionOut(InstructionBase):
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    is_deleted: bool
+
+    class Config:
+        orm_mode = True

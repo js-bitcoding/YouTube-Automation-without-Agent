@@ -154,12 +154,14 @@ def create_group(db: Session, name: str, project_name: str, docs: list, links: l
 
 def update_group(db: Session, group_id: int, name: str, user_id: int):
     # Query the group by group_id instead of group_name
-    group = db.query(Group).filter(Group.id == group_id).first()
+    group = db.query(Group).filter(
+        Group.id == group_id,
+        Group.is_deleted == False
+        ).first()
     
     if not group:
         return None  
 
-   
     if group.user_id != user_id:
         return None 
     group.name = name or group.name
@@ -170,19 +172,25 @@ def update_group(db: Session, group_id: int, name: str, user_id: int):
 
 def delete_group(db: Session, group_id: int, user_id: int):
     # Query the group by group_id instead of group_name
-    group = db.query(Group).filter(Group.id == group_id).first()
+    group = db.query(Group).filter(
+        Group.id == group_id,
+        Group.is_deleted == False
+        ).first()
 
     if not group:
         return None  # Group not found
 
-    
     if group.user_id != user_id:
         return None  
 
-    db.delete(group)
-    db.commit()
-
-    return group
+    try:
+        group.is_deleted = True
+        db.commit()
+        return group
+    except Exception as e:
+        db.rollback()
+        print(f"Error soft-deleting group: {e}")
+        return None
 
 def get_user_groups_with_content(user_id: int, db: Session):
     groups = db.query(Group).filter(Group.user_id == user_id).all()

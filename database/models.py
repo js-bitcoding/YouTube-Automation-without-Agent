@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table
+from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table, UniqueConstraint
 
 Base = declarative_base()
 
@@ -22,8 +22,10 @@ class Project(Base):
     name = Column(String, unique=True, nullable=False)
     created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    is_deleted = Column(Boolean, default=False)
 
     groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="projects", passive_deletes=True)
 
 class Group(Base):
     __tablename__ = "groups"
@@ -33,6 +35,7 @@ class Group(Base):
     created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    is_deleted = Column(Boolean, default=False)
 
     project = relationship("Project", back_populates="groups", passive_deletes=True)
     documents = relationship("Document", back_populates="group", cascade="all, delete-orphan")
@@ -164,10 +167,13 @@ class Thumbnail(Base):
 class Document(Base):
     __tablename__ = "documents"
 
+    __table_args__ = (UniqueConstraint("filename", "group_id", name="unique_filename_per_group"),)
+
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String,nullable=True)
+    filename = Column(String, nullable=True)
     content = Column(Text, nullable=False)
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    is_deleted = Column(Boolean, default=False)
 
     group = relationship("Group", back_populates="documents")
 
@@ -179,6 +185,7 @@ class YouTubeVideo(Base):
     tone = Column(String)  
     style = Column(String)  
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    is_deleted = Column(Boolean, default=False)
 
     group = relationship("Group", back_populates="videos")
 

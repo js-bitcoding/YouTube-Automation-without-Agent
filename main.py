@@ -2,7 +2,7 @@ import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.db_connection import init_db, engine, Base
-from routes import  thumbnail, viral_idea_finder, title_generation, group, knowledge, chat, project
+from routes import thumbnail, viral_idea_finder, title_generation, group, knowledge, chat, project, instructions
 
 Base.metadata.create_all(bind=engine)
 
@@ -39,3 +39,5 @@ app.include_router(group.group_router, tags=["Group"])
 app.include_router(knowledge.knowledge_router, tags=["Knowledge"])
 
 app.include_router(chat.chat_router, tags=["AI Chat"])
+
+app.include_router(instructions.instruction_router, tags=["Instructions"])
