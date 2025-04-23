@@ -1,8 +1,7 @@
 import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
-from database.models import ChatHistory, ChatConversation, ChatSession,Group
-
+from database.models import ChatConversation, ChatSession,Group
 
 def create_chat(
     name: str,
@@ -10,7 +9,6 @@ def create_chat(
     user_id: int,
     group_ids: list[int]
 ):
-    # Create new chat session
     session = ChatSession(name=name)
     session.created_at = datetime.datetime.utcnow()
     session.updated_at = datetime.datetime.utcnow()
@@ -18,12 +16,10 @@ def create_chat(
     db.commit()
     db.refresh(session)
 
-    # Associate groups with session (many-to-many)
     groups = db.query(Group).filter(Group.id.in_(group_ids)).all()
     session.groups.extend(groups)
     db.commit()
 
-    # Create chat conversation
     conversation = ChatConversation(
         name=name,
         chat_session_id=session.id,
@@ -36,7 +32,6 @@ def create_chat(
 
     return conversation
 
-
 def update_chat(db: Session, conversation_id: int, name: Optional[str] = None):
     conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
     if conversation:
@@ -47,7 +42,6 @@ def update_chat(db: Session, conversation_id: int, name: Optional[str] = None):
         db.refresh(conversation)
     return conversation
 
-
 def delete_chat(db: Session, conversation_id: int):
     conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
     if conversation:
@@ -56,9 +50,7 @@ def delete_chat(db: Session, conversation_id: int):
         db.commit()
     return conversation
 
-
 def list_user_conversations(db: Session, user_id: int):
-    # Assumes conversations are linked via ChatSession and Group → User
     return (
         db.query(ChatConversation)
         .join(ChatSession)

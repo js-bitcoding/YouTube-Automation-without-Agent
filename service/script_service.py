@@ -3,23 +3,16 @@ import re
 import wave
 import json
 import uuid
-# import torch
 import whisper
 import requests
-# import traceback
-# import torchaudio
 import subprocess
-# from gtts import gTTS
-# from uuid import uuid4
+from fastapi import UploadFile, HTTPException, status
 from pathlib import Path
 from PyPDF2 import PdfReader
 from pydub import AudioSegment
 import google.generativeai as genai
-# from tortoise.api import TextToSpeech
 from vosk import Model, KaldiRecognizer
 from docx import Document as DocxDocument
-# from tortoise.utils.audio import load_audio
-from fastapi import UploadFile, HTTPException, status
 from youtube_transcript_api import YouTubeTranscriptApi
 from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
 
@@ -48,54 +41,15 @@ def analyze_transcript_style(transcript: str):
     tone = ""
     if response and response.text:
         lines = response.text.splitlines()
-        print(f"lines:::{lines}")
         for line in lines:
             if line.lower().startswith("style:"):
                 style = line.split(":", 1)[1].strip()
-                print(f"Style:::{style}")
             if line.lower().startswith("tone:"):
                 tone = line.split(":", 1)[1].strip()
-                print(f"Tone:::{tone}")
         return {"tone": tone, "style": style}
     return "Casual", "Casual"
 
-# def generate_script(transcript: str, mode: str = "Short-form", tone: str = "Casual", style: str = "Casual"):
-#     print(f"Transcript inside the generate with ollama function :::::::: {transcript}")
-#     print(f"mode ::: {mode} tone ::: {tone} style ::: {style}")
-#     prompt = f"""Generate a YouTube video script in {mode} mode with a {tone} tone and {style} style.
-#         You are an expert YouTube scriptwriter. Your task is to generate a **unique and detailed YouTube video script** while maintaining the **meaning and context** of the provided transcript.  
-
-#         ### **Instructions:**  
-#         1. **DO NOT summarize** the transcript. Instead, expand on it with more details, engaging explanations, and additional insights.  
-#         2. Maintain a **logical flow** with pauses (`...`) where needed for narration.
-#         3. Add a **YouTube intro hook** based on the selected **tone and style** to grab attention instantly.  
-#         4. If the mode is **long-form**, ensure the script is **detailed, engaging, and more descriptive** than the original.  
-#         5. If the mode is **short-form**, keep the content **concise but impactful**, without summarizing.  
-#         6. If the mode is **storytelling**, extend the transcript significantly, adding **rich descriptions, emotions, and narrative depth** while preserving its meaning.  
-#         7. **Rephrase sentences** naturally to avoid repetition but retain the core ideas.  
-#         8. **Avoid using escape sequences** in the generated text.  
-#         9. Ensure the script can be easily converted into speech.
-
-#         ### **Given Transcript (Reference):**  
-#         {transcript}  
-
-#         ### **Generate a new, detailed, and engaging YouTube script based on the above guidelines.**  
-#         """
-
-#     print("Generating Script with the Gemini::::", prompt)
-#     model = genai.GenerativeModel("gemini-1.5-pro-latest")
-#     response = model.generate_content(prompt)
-#     print(f"Response form Gemini :: {response}")
-
-#     if response and response.text:
-#         formatted_script = response.text.replace("\n", "\n\n")
-#         return formatted_script
-#     else:
-#         return "Error generating script"
-
 def generate_script(document_content: str, style: str, tone: str, mode: str = "Short-form"):
-    print(f"Transcript inside the generate with gemini function :::::::: {document_content}")
-    print(f"mode ::: {mode} tone ::: {tone} style ::: {style}")
     prompt = f"""Generate a YouTube video script in {mode} mode with a {tone} tone and {style} style.
         You are an expert YouTube scriptwriter. Your task is to generate a **unique and detailed YouTube video script** while maintaining the **meaning and context** of the provided transcript.  
 
@@ -116,10 +70,8 @@ def generate_script(document_content: str, style: str, tone: str, mode: str = "S
         ### **Generate a new, detailed, and engaging YouTube script based on the above guidelines.**  
         """
 
-    print("Generating Script with the Gemini::::", prompt)
     model = genai.GenerativeModel("gemini-1.5-pro-latest")
     response = model.generate_content(prompt)
-    print(f"Response form Gemini :: {response}")
     if response and response.text:
         formatted_script = response.text.replace("\n", "\n\n")
         return formatted_script
@@ -170,8 +122,6 @@ def transcribe_audio(file_path: str):
 
     return {"transcription": result_text.strip()}
 
-# tts_model = TextToSpeech()
-
 async def handle_voice_tone_upload(file: UploadFile, user_id: int) -> str:
     ext = file.filename.split(".")[-1].lower()
     if ext not in ["mp3", "wav"]:
@@ -218,62 +168,6 @@ def split_text(text: str, max_length: int = MAX_CHARS):
         chunks.append(current.strip())
     return chunks
 
-# def generate_speech(text: str, speech_name: str, user_id: int, voice_sample_path: str) -> str:
-#     try:
-#         if not speech_name.lower().endswith(".mp3"):
-#             speech_name += ".mp3"
-
-#         unique_id = uuid4().hex[:6]
-#         filename = f"{os.path.splitext(speech_name)[0]}_{unique_id}.mp3"
-#         file_path = os.path.join(GENERATED_AUDIO_PATH, filename)
-
-#         chunks = split_text(text, max_length=25)
-
-#         waveform_list = []
-
-#         if voice_sample_path and os.path.exists(voice_sample_path):
-#             print(f"Using custom voice cloning :: {voice_sample_path}")
-#             try:
-#                 voice_samples = [load_audio(voice_sample_path, 22050)]
-#                 conditioning_latents = tts_model.get_conditioning_latents(voice_samples)
-#                 print(f"voice_samples: {voice_samples}")
-#             except Exception as e: 
-#                 print("Error in load_voice()")
-#                 traceback.print_exc()
-#                 raise HTTPException(status_code=500, detail="Voice loading failed")
-#             print(f"conditioning_latents: {conditioning_latents}")
-#             print("Voice samples loaded successfully.")
-#             print(f"Chunks: {chunks}")
-#             print("Appending generated waveform...")
-
-#             for chunk in chunks:
-#                 generated = tts_model.tts_with_preset(
-#                     text=chunk,
-#                     voice_samples=voice_samples,
-#                     conditioning_latents=conditioning_latents,
-#                     preset="fast",
-#                     num_autoregressive_samples=4
-#                 )
-#                 waveform_list.append(generated.squeeze(0).cpu())
-
-#             final_waveform = torch.cat(waveform_list, dim=1)
-#             torchaudio.save(file_path, final_waveform, 24000)
-#             return f"/{file_path}"
-
-#         else:
-#             combined = AudioSegment.empty()
-#             for chunk in chunks:
-#                 temp_path = f"{uuid4().hex[:6]}_temp.mp3"
-#                 tts = gTTS(chunk)
-#                 tts.save(temp_path)
-#                 audio = AudioSegment.from_mp3(temp_path)
-#                 combined += audio
-#                 os.remove(temp_path)
-#             combined.export(file_path, format="mp3")
-#             return f"/{file_path}"
-#     except Exception as e:
-#         print("facing error inside function :: ", e)
-
 def get_video_details(query: str, max_results: int = 5):
     """
     Uses the YouTube Data API to search for videos matching the query.
@@ -319,9 +213,7 @@ def fetch_transcript(youtube_url: str):
         return None, "Invalid YouTube URL"
     try:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        print(f"transcript list :: {transcript_list}")
         transcript_text = " ".join([item["text"] for item in transcript_list])
-        print(f"transcript text :: {transcript_text}")
         return (transcript_text if transcript_text else None), None
     except Exception as e:
         print(f"No subtitles found for video {video_id}. Trying Whisper transcription...")
@@ -372,7 +264,7 @@ def download_audio(video_url: str, output_path: str) -> bool:
         return False
 
 def transcribe_audio_with_whisper(audio_path: str) -> str:
-    model = whisper.load_model("base")  # Or use "medium" / "large" if you want better quality
+    model = whisper.load_model("base")
     result = model.transcribe(audio_path)
     return result["text"]
 
@@ -404,5 +296,3 @@ def extract_text_from_docx(file_path: str) -> str:
     doc = DocxDocument(file_path)
     text = "\n".join([para.text for para in doc.paragraphs])
     return text.strip()
-
-

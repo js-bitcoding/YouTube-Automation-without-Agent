@@ -5,20 +5,19 @@ import torch
 import shutil
 from PIL import Image
 from typing import Optional, List
+from fastapi import Depends, UploadFile, File, Form, Query, HTTPException, APIRouter, Body
 from sqlalchemy.orm import Session
-from database.db_connection import get_db
-from fastapi.responses import JSONResponse
-from database.models import Thumbnail, User
-from config  import GENERATED_THUMBNAILS_PATH
 from diffusers import StableDiffusionImg2ImgPipeline
+from database.db_connection import get_db
+from database.models import Thumbnail, User
+from config import GENERATED_THUMBNAILS_PATH
 from functionality.current_user import get_current_user
-from fastapi import Depends, UploadFile, File, Form, Query, HTTPException, status, APIRouter, Body
 from service.thumbnail_service import (
     store_thumbnails, 
     validate_thumbnail,
-    fetch_thumbnails_preview,
-    generate_image_from_input, 
+    fetch_thumbnails_preview, 
 )
+from utils.logging_utils import logger
 
 thumbnail_router = APIRouter()
 
@@ -28,6 +27,7 @@ def fetch_thumbnails(
     user: User = Depends(get_current_user)
     ):
     results = fetch_thumbnails_preview(keyword)
+    logger.info(f"Fetched thumbnails for preview with keyword '{keyword}' by user {user.id}")
     return {"message": "Fetched thumbnails for preview.", "results": results}
 
 @thumbnail_router.post("/store_selected_thumbnails/")
@@ -37,6 +37,7 @@ def store_selected(
     current_user: User = Depends(get_current_user)
 ):
     result = store_thumbnails(video_ids, keyword, current_user)
+    logger.info(f"User {current_user.id} stored selected thumbnails with keyword '{keyword}'")
     return result
 
 @thumbnail_router.get("/search/")
@@ -65,8 +66,10 @@ def search_thumbnails(
     thumbnails = query.all()
 
     if not thumbnails:
+        logger.warning(f"No matching thumbnails found for user {user.id} with keyword '{keyword}'")
         raise HTTPException(status_code=404, detail="No matching thumbnails found.")
-
+    
+    logger.info(f"User {user.id} retrieved {len(thumbnails)} matching thumbnails.")
     return {
         "keyword": keyword,
         "total": len(thumbnails),
@@ -101,6 +104,7 @@ def validate_thumbnail_api(
     result = validate_thumbnail(temp_path)
     os.remove(temp_path)
 
+    logger.info(f"User {user.id} validated a thumbnail: {file.filename}")
     return result
 
 @thumbnail_router.get("/get_thumbnails/")
@@ -109,6 +113,7 @@ def get_my_thumbnails(
     user: User = Depends(get_current_user)
     ):
     thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
+    logger.info(f"User {user.id} retrieved {len(thumbnails)} thumbnails.")
     return [
         {
             "id": thumb.id,
@@ -144,6 +149,7 @@ async def generate_thumbnail(
 
     output_folder = GENERATED_THUMBNAILS_PATH
     if not filename:
+        logger.warning(f"User {user.id} failed to generate thumbnail: filename is required.")
         raise HTTPException(status_code=400, detail="Filename is required.")
     
     if not filename.lower().endswith(".png"):
@@ -152,6 +158,7 @@ async def generate_thumbnail(
     output_path = os.path.join(output_folder, filename)
     result.save(output_path)
 
+    logger.info(f"User {user.id} generated a thumbnail with prompt '{prompt}' and saved as {filename}.")
     return {
         "message": "Image generated successfully.",
         "output_path": output_path.replace("\\", "/")

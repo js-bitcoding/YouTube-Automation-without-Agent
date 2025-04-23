@@ -4,6 +4,7 @@ from database.db_connection import get_db
 from database.models import GeneratedTitle, User
 from functionality.current_user import get_current_user  
 from service.title_generator_service import generate_ai_titles
+from utils.logging_utils import logger
 
 router = APIRouter()
 
@@ -13,6 +14,7 @@ def get_titles(
     user: User = Depends(get_current_user), 
     db: Session = Depends(get_db),
 ):
+    logger.info(f"User {user.id} is requesting AI-generated titles for topic '{topic}'")
     return generate_ai_titles(topic, user.id, db)  
 
 @router.get("/user_titles/")
@@ -23,6 +25,7 @@ def get_user_titles(
     """
     Fetch all AI-generated titles for the current user.
     """
+    logger.info(f"User {user.id} is fetching their AI-generated titles.")
     rows = db.query(GeneratedTitle).filter(GeneratedTitle.user_id == user.id).all()
     
     all_titles = []
@@ -32,4 +35,5 @@ def get_user_titles(
         else:
             all_titles.append(row.titles)  
 
+    logger.info(f"User {user.id} has {len(all_titles)} generated titles.")
     return {"user_id": user.id, "generated_titles": all_titles}

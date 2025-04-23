@@ -1,15 +1,29 @@
-from pydantic import BaseModel
-from typing import Optional, List
 import datetime
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 class UserRegister(BaseModel):
     username: str 
     password: str 
+    role: str = Field(default="user")
     
 class UserLogin(BaseModel):
     username: str 
     password: str 
     
+class UserOut(BaseModel):
+    id: int
+    username: str
+    is_active: bool
+    role: str
+
+    class Config:
+        orm_mode = True
+
+class UserCountResponse(BaseModel):
+    total_users: int
+    users: List[UserOut]
+
 class ProjectCreate(BaseModel):
     name: Optional[str] = None
 

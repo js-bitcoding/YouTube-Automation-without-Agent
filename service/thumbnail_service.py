@@ -9,16 +9,12 @@ from fer import FER
 from PIL import Image
 from io import BytesIO
 from typing import List
-from fastapi import Depends
-from database.models import User
 from mediapipe import solutions
-from config import GEMINI_API_KEY
 from colorthief import ColorThief
 import google.generativeai as genai
-from database.models import Thumbnail
-from config import THUMBNAIL_STORAGE_PATH
+from database.models import Thumbnail, User
 from database.db_connection import SessionLocal
-from functionality.current_user import get_current_user
+from config import THUMBNAIL_STORAGE_PATH, GEMINI_API_KEY
 from service.youtube_service import fetch_video_thumbnails
 
 API_KEY = GEMINI_API_KEY
@@ -90,16 +86,13 @@ def generate_image_from_input(image_path: str, prompt: str):
             ]
         )
 
-        print("Full Response:", response)
-
         if response and response.candidates:
             for candidate in response.candidates:
                 for part in candidate.content.parts:
                     if hasattr(part, "inline_data"):
                         return part.inline_data.data
-                        # return base64.b64encode(part.inline_data.data).decode("utf-8")  # Return base64 image data
+                        # return base64.b64encode(part.inline_data.data).decode("utf-8")
 
-        print("❌ No image returned in the response.")
         return None
     
     except Exception as e:
@@ -212,27 +205,7 @@ def detect_emotions(image_path):
     else:
         return None
 
-# def validate_thumbnail(image_path):
-#     text_exists = detect_text(image_path)
-#     text_value = extract_fonts(image_path)
-#     faces = detect_faces(image_path)
-#     emotion = detect_emotions(image_path) if faces > 0 else None
-#     colors = extract_colors(image_path)
-    
-#     return {
-#         "clarity": clarity_score(image_path),
-#         "predicted_ctr": predict_ctr_score(image_path),
-#         "text_detection": {
-#             "exists": text_exists,
-#             "value": text_value.strip() if text_exists else ""
-#         },
-#         "face_detection": faces,
-#         "emotion": emotion,
-#         "color_palette": colors
-#     }
-
 def validate_thumbnail(image_path, from_url=False):
-    # Load the image depending on source
     if from_url:
         response = requests.get(image_path)
         if response.status_code != 200:
@@ -240,7 +213,7 @@ def validate_thumbnail(image_path, from_url=False):
         image = Image.open(BytesIO(response.content)).convert("RGB")
         temp_path = "temp_thumbnail.jpg"
         image.save(temp_path)
-        image_path = temp_path  # Now validate from saved temp
+        image_path = temp_path
     else:
         temp_path = None
 
@@ -263,6 +236,5 @@ def validate_thumbnail(image_path, from_url=False):
             "color_palette": colors
         }
     finally:
-        # Clean up temp file if it was downloaded
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)

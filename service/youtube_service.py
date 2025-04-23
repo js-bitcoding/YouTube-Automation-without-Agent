@@ -1,17 +1,17 @@
 import os
 import re
 import requests
-from database.models import Video
-from config import YOUTUBE_API_KEY
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from service.engagement_service import (
     calculate_view_to_subscriber_ratio,
     calculate_view_velocity,
     calculate_engagement_rate,
 )
+from config import YOUTUBE_API_KEY
+from database.models import Video
 
 BASE_URL = "https://www.googleapis.com/youtube/v3"
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
@@ -31,7 +31,6 @@ def fetch_video_thumbnails(keyword):
     }
     
     response = requests.get(YOUTUBE_SEARCH_URL, params=params).json()
-    print("YouTube API Response:", response)
     videos = []
     
     for item in response.get("items", []):
@@ -54,7 +53,7 @@ def get_published_after(filter_option):
     if filter_option == "today":
         return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
     elif filter_option == "this week":
-        start_of_week = now - timedelta(days=now.weekday())  # Monday of this week
+        start_of_week = now - timedelta(days=now.weekday())
         return start_of_week.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
     elif filter_option == "this month":
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -131,9 +130,7 @@ def fetch_youtube_videos(query, max_results=10, duration_category=None, min_view
     for i, item in enumerate(stats_response.get("items", [])):
         stats = item.get("statistics", {})
         duration_str = item.get("contentDetails", {}).get("duration", "PT0S")
-        video_duration = parse_duration_to_seconds(duration_str)
-
-        print(f"Video ID: {video_ids[i]} | Duration: {video_duration} seconds")  
+        video_duration = parse_duration_to_seconds(duration_str)  
 
         if video_duration == 0:
             continue
@@ -188,9 +185,7 @@ def calculate_ctr(clicks, impressions):
     return round((clicks / impressions) * 100, 2)
 
 def parse_duration_to_seconds(duration):
-    """Convert ISO 8601 duration (e.g., PT1H2M30S) to total seconds."""
-    print("Raw Duration String:", duration)  
-    
+    """Convert ISO 8601 duration (e.g., PT1H2M30S) to total seconds.""" 
     pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
     match = pattern.match(duration)
     if not match:
@@ -200,17 +195,9 @@ def parse_duration_to_seconds(duration):
     minutes = int(match.group(2) or 0)
     seconds = int(match.group(3) or 0)
 
-    total_seconds = hours * 3600 + minutes * 60 + seconds
-    print("Parsed Duration (Seconds):", total_seconds)  
+    total_seconds = hours * 3600 + minutes * 60 + seconds  
     
     return total_seconds
-
-if __name__ == "__main__":
-    query = "football"
-    results = fetch_youtube_videos(query, duration_category="medium")  
-    print("\nFinal Results:")
-    for video in results:
-        print(f"{video['title']} | Duration: {video['duration']}s | Views: {video['views']}")
 
 def store_videos_in_db(videos):
     """Store fetched videos in the database."""
@@ -241,7 +228,6 @@ def store_videos_in_db(videos):
             session.commit()
         except IntegrityError:
             session.rollback()
-            # print(f"Video {video['video_id']} already exists in the database.")
 
 def fetch_video_by_id(video_id):
     """Fetch details for a single video using its video ID."""

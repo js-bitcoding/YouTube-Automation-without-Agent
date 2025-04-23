@@ -9,20 +9,21 @@ def setup_logging():
     Returns:
         logging.Logger: The configured logger instance.
     """
+    logger = logging.getLogger("YouTubeAutomation")
+    logger.setLevel(logging.INFO)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('YouTube_Automation.log')
-        ]
-    )
+    if not logger.hasHandlers():
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-    return logging.getLogger(__name__)
+        file_handler = logging.FileHandler("YouTube_Automation.log")
+        file_handler.setFormatter(formatter)
+
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+
+        logger.addHandler(file_handler)
+        logger.addHandler(stream_handler)
+
+    return logger
 
 logger = setup_logging()
-
-logger.info(f"This is Information Message")
-logger.warning(f"This is Warning Message")
-logger.error(f"This is Error Message")

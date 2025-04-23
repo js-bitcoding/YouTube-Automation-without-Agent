@@ -1,12 +1,13 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Query, HTTPException
 from database.db_connection import get_db
 from database.models import Video, Channel
 from database.models import User, UserSavedVideo
 from functionality.current_user import get_current_user
-from fastapi import APIRouter, Depends, Query, HTTPException
 from service.youtube_service import fetch_youtube_videos, fetch_video_by_id
 from service.engagement_service import calculate_engagement_rate, calculate_view_to_subscriber_ratio, calculate_view_velocity
+from utils.logging_utils import logger
 
 router = APIRouter()
 saved_videos = []
@@ -26,11 +27,17 @@ def get_videos(
     upload_date: str = Query(None, description="Filter by upload date: today, this_week, this_month, this_year"),
     db: Session = Depends(get_db)
 ):
+    logger.info(f"User is searching for YouTube videos with query: {query}")
     return fetch_youtube_videos(query, max_results, duration_category, min_views, min_subscribers, upload_date)
 
 @router.get("/video/{videoid}")
 def get_video_details(videoid: str):
+    logger.info(f"Fetching details for video {videoid}")
     video_data = fetch_video_by_id(videoid)
+    if "error" in video_data:
+        logger.error(f"Error fetching video details for {videoid}: {video_data['error']}")
+        raise HTTPException(status_code=404, detail="Video not found")
+    logger.info(f"Video details fetched successfully for {videoid}")
     return video_data
 
 @router.post("/video/save/{video_id}")
@@ -40,11 +47,12 @@ def save_video(
     user: User = Depends(get_current_user)
     ):
     """API endpoint to save a video by video ID."""
-    print(f"Saving video {video_id} for user {user.id}")
+    logger.info(f"User {user.id} is attempting to save video {video_id}")
 
     video_details = fetch_video_by_id(video_id)
 
     if "error" in video_details:
+        logger.error(f"Video {video_id} not found")
         raise HTTPException(status_code=404, detail="Video not found")
 
     user = db.query(User).filter(User.id == user.id).first()
@@ -62,6 +70,7 @@ def save_video(
         )
         db.add(new_channel)
         db.commit()  
+        logger.info(f"New channel {video_details['channel_name']} added to the database")
 
     existing_video = db.query(Video).filter_by(video_id=video_id).first()
 
@@ -91,8 +100,10 @@ def save_video(
         db.add(new_video)
         db.commit()
         db.refresh(new_video)
+        logger.info(f"New video {video_id} saved to the database")
         video = new_video  
     else:
+        logger.info(f"Video {video_id} already exists in the database")
         video = existing_video  
 
     existing_entry = (
@@ -102,6 +113,7 @@ def save_video(
     )
 
     if existing_entry:
+        logger.warning(f"User {user.id} tried to save video {video_id} again.")
         raise HTTPException(status_code=400, detail="Video already saved")
 
     saved_video = UserSavedVideo(user_id=user.id, video_id=video_id)
@@ -109,7 +121,7 @@ def save_video(
     db.commit()
     db.refresh(saved_video)
 
-    print(f"Saved video {video_id} successfully for user {user.id}!")
+    logger.info(f"User {user.id} successfully saved video {video_id}")
 
     return {"message": "Video saved successfully!", "video_id": video_id}
 
@@ -120,18 +132,19 @@ def get_saved_videos(
     ):
     """Retrieve all saved videos for the current user."""
 
+    logger.info(f"User {user.id} is fetching their saved videos")
     saved_videos = (
         db.query(Video)
         .join(UserSavedVideo, Video.video_id == UserSavedVideo.video_id)
         .filter(UserSavedVideo.user_id == user.id)
         .all()
-    )
-
-    print(f"User {user.id} saved videos:", saved_videos)  
+    )  
 
     if not saved_videos:
+        logger.warning(f"User {user.id} has no saved videos.")
         raise HTTPException(status_code=404, detail="No saved videos found")
 
+    logger.info(f"User {user.id} has {len(saved_videos)} saved videos.")
     return {
         "saved_videos": [
             {

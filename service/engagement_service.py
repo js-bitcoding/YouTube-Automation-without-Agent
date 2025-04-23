@@ -5,7 +5,7 @@ def calculate_view_to_subscriber_ratio(views, subscribers):
     try:
         views = int(views) if views is not None else 0
         subscribers = int(subscribers) if subscribers is not None else 0
-        return round(views / subscribers, 2) if subscribers > 0 else 0  # Avoid division by zero
+        return round(views / subscribers, 2) if subscribers > 0 else 0
     except (ValueError, TypeError):
         return 0  
 
@@ -19,7 +19,7 @@ def calculate_view_velocity(video):
             return 0  
         
         upload_date = datetime.fromisoformat(upload_date_str.replace("Z", "+00:00"))
-        days_since_upload = max((datetime.now(timezone.utc) - upload_date).days, 1)  # Avoid division by zero
+        days_since_upload = max((datetime.now(timezone.utc) - upload_date).days, 1)
         return round(views / days_since_upload, 2)
     except (ValueError, TypeError):
         return 0  

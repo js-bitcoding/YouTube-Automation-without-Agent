@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table, UniqueConstraint
 
+timezone = datetime.datetime.utcnow
 Base = declarative_base()
 
 chat_session_group = Table(
@@ -10,8 +11,8 @@ chat_session_group = Table(
     Base.metadata,
     Column("chat_session_id", ForeignKey("chat_sessions.id", ondelete="CASCADE"), primary_key=True),
     Column("group_id", ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
-    Column("created_at", DateTime, default=datetime.datetime.utcnow),
-    Column("updated_at", DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow),
+    Column("created_at", DateTime, default=timezone),
+    Column("updated_at", DateTime, default=timezone, onupdate=timezone),
     Column("is_deleted", Boolean, default=False)
 )
 
@@ -20,19 +21,20 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    created_time = Column(DateTime, default=timezone, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     is_deleted = Column(Boolean, default=False)
 
     groups = relationship("Group", back_populates="project", cascade="all, delete-orphan")
     
-
 class Group(Base):
     __tablename__ = "groups"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), index=True)
-    created_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    created_time = Column(DateTime, default=timezone, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=timezone, onupdate=timezone, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
     is_deleted = Column(Boolean, default=False)
@@ -52,12 +54,13 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, nullable=False)
+    username = Column(String, nullable=False)
     password = Column(String, nullable=False)
     is_active = Column(Boolean, default=False)
-    role = Column(String, default="user")  # "admin" or "user"
+    role = Column(String, default="user")
+    is_deleted = Column(Boolean, default=False)
+    updated_at = Column(DateTime(timezone=True), default=timezone, onupdate=timezone)
    
-
     login_history = relationship("UserLoginHistory", back_populates="user", cascade="all, delete-orphan") 
     saved_thumbnails = relationship("Thumbnail", back_populates="user", cascade="all, delete-orphan")
     # generated_script = relationship("Script", back_populates="user", cascade="all, delete-orphan")
@@ -68,15 +71,17 @@ class User(Base):
     projects = relationship("Project", backref="user", cascade="all, delete-orphan")
     chats = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     instructions = relationship("Instruction", back_populates="user", cascade="all, delete-orphan")
+
 class UserLoginHistory(Base):
     __tablename__ = "user_login_history"
  
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    login_time = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    login_time = Column(DateTime, default=timezone, nullable=False)
     logout_time = Column(DateTime,  nullable=True ,default=None)
+    created_at = Column(DateTime(timezone=True), default=timezone, nullable=False)
     
-    user = relationship("User")
+    user = relationship("User", back_populates="login_history")
 
 class Channel(Base):
     __tablename__ = "channels"
@@ -109,7 +114,6 @@ class Video(Base):
     video_url = Column(Text, nullable=False)
     
     channel = relationship("Channel", back_populates="videos")  
-
     trending_topics = relationship("TrendingTopic", back_populates="video", cascade="all, delete-orphan")
     saved_by_users = relationship("UserSavedVideo", back_populates="video", cascade="all, delete-orphan")
 
@@ -130,10 +134,9 @@ class UserSavedVideo(Base):
     __tablename__ = "user_saved_videos"
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-
     video_id = Column(String(50), ForeignKey("videos.video_id", ondelete="CASCADE"), primary_key=True)
     folder_name = Column(String(100))
-    saved_at = Column(DateTime, default=datetime.datetime.now)
+    saved_at = Column(DateTime, default=timezone)
 
     user = relationship("User", back_populates="saved_videos")
     video = relationship("Video", back_populates="saved_by_users")
@@ -160,8 +163,8 @@ class Thumbnail(Base):
     emotion = Column(String, nullable=True)
     color_palette = Column(JSON, nullable=True)
     keyword = Column(Text)
-    
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    
     user = relationship("User", back_populates="saved_thumbnails")
 
 class Document(Base):
@@ -195,14 +198,13 @@ class Instruction(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=timezone)
+    updated_at = Column(DateTime, default=timezone, onupdate=timezone)
     is_activate = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False) 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     user = relationship("User", back_populates="instructions")
     conversations = relationship("ChatConversation", back_populates="instruction", cascade="all, delete-orphan")
-
 
 class ChatHistory(Base): 
     __tablename__ = "chat_histories"
@@ -211,9 +213,9 @@ class ChatHistory(Base):
     query = Column(Text)
     response = Column(Text)
     context = Column(JSON)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=timezone)
     is_deleted = Column(Boolean, default=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))  # ✅ Add this
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
 
     #instruction_id = Column(Integer, ForeignKey("instructions.id", ondelete="SET NULL"))
     chat_conversation_id = Column(Integer, ForeignKey("chat_conversations.id", ondelete="CASCADE"))
@@ -226,8 +228,8 @@ class ChatConversation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=timezone)
+    updated_at = Column(DateTime, default=timezone, onupdate=timezone)
     is_deleted = Column(Boolean, default=False)
     instruction_id = Column(Integer, ForeignKey("instructions.id", ondelete="SET NULL"))
     chat_session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"))
@@ -241,13 +243,10 @@ class ChatSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=timezone)
+    updated_at = Column(DateTime, default=timezone, onupdate=timezone)
     is_deleted = Column(Boolean, default=False)
 
     conversation = Column(JSON, default=list)
     groups = relationship("Group", secondary=chat_session_group, back_populates="sessions")
     conversations = relationship("ChatConversation", back_populates="session", cascade="all, delete-orphan")
-    
-   
-

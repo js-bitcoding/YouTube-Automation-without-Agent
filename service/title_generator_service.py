@@ -2,18 +2,18 @@ import os
 import re
 import requests
 from dotenv import load_dotenv
-from langchain.tools import Tool
 from sqlalchemy.orm import Session
-from langchain_community.llms import Ollama
-from database.models import GeneratedTitle
+from langchain.tools import Tool
+from langchain_ollama import OllamaLLM
 from langchain.memory import ConversationBufferMemory
 from langchain.agents import initialize_agent, AgentType
+from database.models import GeneratedTitle
 
 load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
-llm = Ollama(model="llama3.2:1b")  
+llm = OllamaLLM(model="llama3.2:1b")  
 
 def extract_video_id(youtube_url: str) -> str:
     """Extracts video ID from a YouTube URL."""
