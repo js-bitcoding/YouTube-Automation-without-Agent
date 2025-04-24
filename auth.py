@@ -20,7 +20,21 @@ async def user_api(user_id: int = Depends(get_current_user)):
 
 @router.post("/signup")
 def signup(user_data: UserRegister, db: Session = Depends(get_db)):
+    """
+    Registers a new user with the provided username, password, and role.
 
+    Validates that:
+    - The username and password are not empty and are not set to default values.
+    - The user role is either 'user' or 'admin'.
+    - The username is not already taken by an existing user.
+
+    Args:
+        user_data (UserRegister): The registration details including username, password, and role.
+        db (Session): The database session.
+
+    Returns:
+        JSONResponse: A message indicating whether the registration was successful or not.
+    """
     if user_data.username.strip().lower() == "string" or not user_data.username.strip():
         logger.warning(f"Signup failed for username {user_data.username}: Username cannot be empty.")
         raise HTTPException(status_code=400, detail="Username cannot be empty you need to provide.")
@@ -59,6 +73,25 @@ def signup(user_data: UserRegister, db: Session = Depends(get_db)):
 
 @router.post("/login")
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
+    """
+    Handles user login by verifying credentials and generating a JWT token.
+
+    Validates the following:
+    - The username and password are provided and not empty.
+    - The provided credentials match an existing user in the database.
+
+    If the login is successful:
+    - A login record is created in the `UserLoginHistory` table.
+    - The user's account is marked as active.
+    - A JWT token is generated for the user.
+
+    Args:
+        user_data (UserLogin): The login details, including username and password.
+        db (Session): The database session.
+
+    Returns:
+        JSONResponse: A response containing the JWT token and a success message.
+    """
     if user_data.username.strip().lower() == "string" or not user_data.username.strip():
         logger.warning(f"Login failed for username {user_data.username}: Username cannot be empty.")
         raise HTTPException(status_code=400, detail="Username cannot be empty. You need to provide.")
@@ -98,6 +131,21 @@ def logout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Logs out the current user by updating their login history and marking their account as inactive.
+
+    Validates the following:
+    - Finds the most recent active login record for the current user.
+    - Updates the logout time for that login record.
+    - Marks the user as inactive in the database.
+
+    Args:
+        current_user (User): The currently authenticated user.
+        db (Session): The database session.
+
+    Returns:
+        JSONResponse: A success message indicating that the user has logged out.
+    """
     logger.debug(f"Logging out user ID: {current_user.id}")
 
     latest_login = db.query(UserLoginHistory).filter(
@@ -123,7 +171,18 @@ def logout(
 def whoami(
     current_user: User = Depends(get_current_user)
     ):
-    
+    """
+    Fetches and returns the current user's details.
+
+    Validates the following:
+    - Retrieves the current authenticated user based on the provided token.
+
+    Args:
+        current_user (User): The currently authenticated user.
+
+    Returns:
+        dict: A dictionary containing the user's id, username, role, and active status.
+    """
     logger.info(f"User {current_user.username} requested their current user details.")
     return {
         "id": current_user.id,

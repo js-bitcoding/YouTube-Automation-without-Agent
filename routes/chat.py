@@ -10,6 +10,16 @@ chat_router = APIRouter(prefix="/chats")
 
 @chat_router.get("/conversations")
 def get_all_conversations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Retrieves all non-deleted conversations for the current user.
+
+    Args:
+        db (Session): SQLAlchemy DB session.
+        current_user (User): The currently authenticated user.
+
+    Returns:
+        list: List of ChatConversation objects.
+    """
     get_all_cov = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
         Group.user_id == current_user.id,
         ChatConversation.is_deleted == False
@@ -29,6 +39,18 @@ def create_conversation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Creates a new conversation under a session owned by the current user.
+
+    Args:
+        session_id (int): ID of the session to attach the conversation to.
+        name (str): Name of the new conversation.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        ChatConversation: The newly created conversation object.
+    """
     session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
         ChatSession.id == session_id,
         Group.user_id == current_user.id
@@ -56,6 +78,18 @@ def update_conversation_name(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Updates the name of a conversation owned by the current user.
+
+    Args:
+        conversation_id (int): ID of the conversation to update.
+        name (str): New name for the conversation.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Confirmation message of the update.
+    """
     convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
         ChatConversation.id == conversation_id,
         Group.user_id == current_user.id
@@ -80,6 +114,17 @@ def get_conversation_by_id(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Retrieves details of a specific conversation, including its chats, for the current user.
+
+    Args:
+        conversation_id (int): ID of the conversation to retrieve.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Conversation details, including the name, timestamps, and associated chats.
+    """
     convo = db.query(ChatConversation).options(
         joinedload(ChatConversation.chats)
     ).join(ChatSession).join(chat_session_group).join(Group).filter(
@@ -115,6 +160,17 @@ def delete_conversation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Soft-deletes a conversation by setting `is_deleted` to True for the current user.
+
+    Args:
+        conversation_id (int): ID of the conversation to delete.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Confirmation message of deletion.
+    """
     convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
         ChatConversation.id == conversation_id,
         Group.user_id == current_user.id
@@ -136,6 +192,18 @@ def generate_group_response(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Generates a response based on the user's prompt and conversation context.
+
+    Args:
+        conversation_id (int): ID of the conversation for context.
+        user_prompt (str): The user's query or prompt for the assistant.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: The generated response from the assistant.
+    """
     if not user_prompt or len(user_prompt.strip()) == 0:
         raise HTTPException(status_code=400, detail="User prompt cannot be empty")
     

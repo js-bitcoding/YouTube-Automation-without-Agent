@@ -5,7 +5,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from functionality.current_user import get_current_user
 from database.schemas import GroupUpdate
-from service.group_service import get_user_groups_with_content, update_group, delete_group, process_group_content, get_user_group_with_content_by_id
+from service.group_service import (
+    get_user_groups_with_content, 
+    update_group, 
+    delete_group, 
+    process_group_content, 
+    get_user_group_with_content_by_id
+)
 from database.db_connection import get_db
 from database.models import Group, Document,  Project, User,YouTubeVideo
 from utils.logging_utils import logger
@@ -19,6 +25,18 @@ async def create_empty_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Creates an empty group for a project, associated with the current user.
+
+    Args:
+        project_id (int): ID of the project the group is associated with.
+        name (str): Name of the new group (defaults to "Untitled Group").
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Confirmation message and details of the newly created group.
+    """
     logger.info(f"Creating empty group for project ID {project_id} by user {current_user.id}")
 
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
@@ -46,7 +64,27 @@ async def create_empty_group(
     })
 
 @group_router.put("/{group_id}")
-def update_group_api(group_id: int, payload: GroupUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_group_api(
+    group_id: int, 
+    payload: GroupUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+    ):
+    """
+    Updates a group's name for the specified group ID.
+
+    Args:
+        group_id (int): ID of the group to update.
+        payload (GroupUpdate): Object containing updated group details (e.g., name).
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        Group: The updated group details.
+
+    Raises:
+        HTTPException: If the user is unauthorized to update the group.
+    """
     logger.info(f"User {current_user.id} is updating group {group_id} with name '{payload.name}'")
     
     group = update_group(db, group_id, payload.name, current_user.id)
@@ -66,6 +104,23 @@ async def update_group_content(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Updates the content (documents and videos) for a group under a specified project.
+
+    Args:
+        project_id (int): ID of the project the group belongs to.
+        group_id (int): ID of the group to update.
+        files (List[UploadFile]): List of document files to be uploaded.
+        youtube_links (List[str]): List of YouTube links to associate with the group.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Contains the list of documents and videos added to the group.
+
+    Raises:
+        HTTPException: If project or group is not found, or if no valid content is provided.
+    """
     logger.info(f"Updating content for group {group_id} under project {project_id} by user {current_user.id}")
     results = {"documents": [], "videos": []}
 
@@ -107,6 +162,23 @@ async def delete_group_content(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Deletes specified documents and YouTube videos from a group under a project.
+
+    Args:
+        project_id (int): ID of the project the group belongs to.
+        group_id (int): ID of the group from which content is being deleted.
+        document_ids (List[int]): List of document IDs to delete.
+        youtube_video_ids (List[int]): List of YouTube video IDs to delete.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Contains lists of deleted document IDs, deleted video IDs, and any errors encountered.
+
+    Raises:
+        HTTPException: If project or group is not found, or if no valid content IDs are provided.
+    """
     logger.info(f"Deleting content from group {group_id} by user {current_user.id}")
     results = {"documents_deleted": [], "videos_deleted": [], "errors": []}
 
@@ -165,6 +237,20 @@ async def delete_group_content(
 
 @group_router.delete("/{group_id}")
 def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Deletes a group after validating user permissions.
+
+    Args:
+        group_id (int): ID of the group to delete.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Confirmation message indicating successful deletion.
+
+    Raises:
+        HTTPException: If the group is not found, already deleted, or the user is unauthorized.
+    """
     logger.info(f"User {current_user.id} requesting delete for group {group_id}")
 
     group = delete_group(db, group_id, current_user.id)
@@ -180,6 +266,19 @@ def get_user_groups_with_content_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Retrieves all groups and their associated content for the current user.
+
+    Args:
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: A list of groups with associated content.
+
+    Raises:
+        HTTPException: If no groups are found for the current user.
+    """
     logger.info(f"Fetching groups with content for user {current_user.id}")
     content = get_user_groups_with_content(current_user.id, db)
     if not content:
@@ -194,6 +293,20 @@ def get_user_group_with_content_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Retrieves the content of a specific group for the current user.
+
+    Args:
+        group_id (int): The ID of the group to retrieve.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: The group with its associated content.
+
+    Raises:
+        HTTPException: If the group is not found or the user is not authorized to access it.
+    """
     logger.info(f"Fetching content for group {group_id} for user {current_user.id}")
     content = get_user_group_with_content_by_id(group_id, current_user.id, db)
     if not content:

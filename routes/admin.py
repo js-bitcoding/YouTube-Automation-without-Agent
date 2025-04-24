@@ -9,6 +9,16 @@ admin_router = APIRouter()
 
 @admin_router.get("/count", response_model=UserCountResponse)
 def get_user_count(db: Session = Depends(get_db), _: User = Depends(admin_only)):
+    """
+    Returns the total count and list of all active (non-deleted) users.
+
+    Args:
+        db (Session): SQLAlchemy DB session.
+        _ (User): Authenticated admin user (validated by admin_only).
+
+    Returns:
+        dict: Total number of active users and their details.
+    """
     users = db.query(User).filter(User.is_deleted == False).all()
     if not users:
         raise HTTPException(status_code=404, detail="No active users found")
@@ -26,6 +36,20 @@ def update_user(
     db: Session = Depends(get_db),
     _: User = Depends(admin_only)
 ):
+    """
+    Updates user details such as username, active status, or role.
+
+    Args:
+        user_id (int): ID of the user to update.
+        username (str, optional): New username.
+        is_active (bool, optional): User's active status.
+        role (str, optional): New role ('admin' or 'user').
+        db (Session): SQLAlchemy DB session.
+        _ (User): Authenticated admin user.
+
+    Returns:
+        dict: Confirmation message with updated user details.
+    """
     user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -45,6 +69,17 @@ def update_user(
 
 @admin_router.delete("/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin_only)):
+    """
+    Soft-deletes a user by setting `is_deleted` to True.
+
+    Args:
+        user_id (int): ID of the user to delete.
+        db (Session): SQLAlchemy DB session.
+        _ (User): Authenticated admin user.
+
+    Returns:
+        dict: Confirmation message indicating deletion.
+    """
     user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found or already deleted")

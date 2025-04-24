@@ -10,6 +10,20 @@ sessions_router = APIRouter(prefix="/Session")
 
 @sessions_router.get("/")
 def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Retrieves all chat sessions for the authenticated user.
+
+    Args:
+        db (Session): SQLAlchemy DB session.
+        current_user (User): The authenticated user making the request.
+
+    Returns:
+        List[ChatSession]: A list of chat sessions associated with the user.
+
+    Raises:
+        HTTPException:
+            - If no chat sessions are found for the user.
+    """
     sessions = db.query(ChatSession).join(chat_session_group).join(Group).filter(
         Group.user_id == current_user.id,
         ChatSession.is_deleted == False
@@ -28,6 +42,21 @@ def get_session_by_id(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Retrieves a specific chat session by its ID for the authenticated user.
+
+    Args:
+        session_id (int): The ID of the chat session to retrieve.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): The authenticated user making the request.
+
+    Returns:
+        ChatSession: The chat session associated with the specified ID.
+
+    Raises:
+        HTTPException:
+            - If the chat session is not found or does not belong to the user.
+    """
     session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
         ChatSession.id == session_id,
         Group.user_id == current_user.id,
@@ -47,6 +76,22 @@ def create_chat_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Creates a new chat session and its associated conversation for the authenticated user, 
+    linking it to the specified groups.
+
+    Args:
+        payload (ChatCreate): The data for creating a new chat session, including group IDs.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): The authenticated user creating the chat session.
+
+    Returns:
+        dict: A dictionary containing the chat session ID, conversation ID, and associated group IDs.
+
+    Raises:
+        HTTPException:
+            - If no valid groups are found for the authenticated user.
+    """
     unique_group_ids = list(set(payload.group_ids))
     logger.info(f"Creating chat session with groups: {unique_group_ids} for User ID {current_user.id}")
 
@@ -83,6 +128,21 @@ def create_chat_api(
 
 @sessions_router.delete("/delete")
 def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Marks a chat session as deleted for the authenticated user.
+
+    Args:
+        session_id (int): The ID of the chat session to be deleted.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): The authenticated user requesting the deletion.
+
+    Returns:
+        dict: A dictionary with a success message confirming the session deletion.
+
+    Raises:
+        HTTPException:
+            - If the session is not found or the user is unauthorized to delete the session.
+    """
     session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
         ChatSession.id == session_id,
         Group.user_id == current_user.id

@@ -16,6 +16,20 @@ def create_instruction(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
+    """
+    Creates a new instruction, ensuring no duplicate names exist.
+
+    Args:
+        instruction (InstructionCreate): The instruction details to create.
+        db (Session): SQLAlchemy DB session.
+        user (User): Admin user creating the instruction.
+
+    Returns:
+        InstructionOut: The newly created instruction.
+
+    Raises:
+        HTTPException: If an instruction with the same name already exists.
+    """
     existing_instruction = db.query(Instruction).filter(Instruction.name == instruction.name).first()
     if existing_instruction:
         logger.warning(f"Create failed: Instruction with name '{instruction.name}' already exists.")
@@ -36,6 +50,24 @@ def update_instruction(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
+    """
+    Updates an existing instruction, ensuring that only the owner can modify it and the 'user_id' field cannot be updated.
+
+    Args:
+        instruction_id (int): The ID of the instruction to update.
+        update_data (InstructionUpdate): The updated instruction data.
+        db (Session): SQLAlchemy DB session.
+        user (User): Admin user performing the update.
+
+    Returns:
+        InstructionOut: The updated instruction.
+
+    Raises:
+        HTTPException:
+            - If the instruction is not found.
+            - If the user is unauthorized to update the instruction.
+            - If attempting to update the 'user_id' field directly.
+    """
     instruction = db.query(Instruction).filter(
         Instruction.id == instruction_id, 
         Instruction.is_deleted == False
@@ -67,6 +99,22 @@ def delete_instruction(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
+    """
+    Marks an instruction as deleted, ensuring that only the owner can delete it.
+
+    Args:
+        instruction_id (int): The ID of the instruction to delete.
+        db (Session): SQLAlchemy DB session.
+        user (User): Admin user performing the deletion.
+
+    Returns:
+        dict: A confirmation message indicating the instruction has been deleted.
+
+    Raises:
+        HTTPException:
+            - If the instruction is not found.
+            - If the user is unauthorized to delete the instruction.
+    """
     instruction = db.query(Instruction).filter(Instruction.id == instruction_id).first()
 
     if not instruction:
@@ -87,6 +135,20 @@ def get_my_instructions(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
+    """
+    Retrieves all instructions created by the authenticated user that are not marked as deleted.
+
+    Args:
+        db (Session): SQLAlchemy DB session.
+        user (User): Admin user making the request.
+
+    Returns:
+        List[InstructionOut]: A list of instructions for the authenticated user.
+
+    Raises:
+        HTTPException:
+            - If no instructions are found for the user.
+    """
     instructions = db.query(Instruction).filter(
         Instruction.user_id == user.id, 
         Instruction.is_deleted == False
@@ -105,6 +167,21 @@ def get_instruction_by_id(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
+    """
+    Retrieves a specific instruction created by the authenticated user based on the instruction ID.
+
+    Args:
+        instruction_id (int): The ID of the instruction to retrieve.
+        db (Session): SQLAlchemy DB session.
+        user (User): Admin user making the request.
+
+    Returns:
+        InstructionOut: The instruction details for the given ID if found and owned by the user.
+
+    Raises:
+        HTTPException:
+            - If the instruction with the specified ID is not found or not owned by the user.
+    """
     instruction = db.query(Instruction).filter(
         Instruction.id == instruction_id,
         Instruction.user_id == user.id,
@@ -124,6 +201,22 @@ def activate_instruction(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
+    """
+    Activates a specific instruction for the authenticated user. If another instruction is already active, it is deactivated.
+
+    Args:
+        instruction_id (int): The ID of the instruction to activate.
+        db (Session): SQLAlchemy DB session.
+        user (User): Admin user making the request.
+
+    Returns:
+        JSONResponse: A message indicating the activation status, along with details of the deactivated instruction(s) and the newly activated instruction.
+
+    Raises:
+        HTTPException:
+            - If the instruction with the specified ID is not found.
+            - If the instruction is not owned by the user.
+    """
     instruction = db.query(Instruction).filter(
         Instruction.id == instruction_id, 
         Instruction.is_deleted == False

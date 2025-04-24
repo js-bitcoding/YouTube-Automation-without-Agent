@@ -15,6 +15,21 @@ def create_project_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Creates a new project for the authenticated user.
+
+    Args:
+        project (ProjectCreate): The project data containing the name.
+        db (Session): SQLAlchemy DB session.
+        user (User): The authenticated user making the request.
+
+    Returns:
+        JSONResponse: Details of the created project.
+
+    Raises:
+        HTTPException:
+            - If the project name is empty or invalid.
+    """
     logger.info(f"User {user.id} requested create for new project")
 
     if not project.name or len(project.name.strip()) == 0:
@@ -30,6 +45,23 @@ def update_project_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Updates the details of an existing project for the authenticated user.
+
+    Args:
+        project_id (int): The ID of the project to be updated.
+        payload (ProjectUpdate): The data to update the project with (e.g., new project name).
+        db (Session): SQLAlchemy DB session.
+        user (User): The authenticated user making the request.
+
+    Returns:
+        Project: The updated project details.
+
+    Raises:
+        HTTPException:
+            - If the project name is empty or invalid.
+            - If the project does not exist or is not found.
+    """
     logger.info(f"User {user.id} requested update for project {project_id}")
 
     if payload.name and len(payload.name.strip()) == 0:
@@ -49,6 +81,21 @@ def delete_project_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Deletes a project for the authenticated user.
+
+    Args:
+        project_id (int): The ID of the project to be deleted.
+        db (Session): SQLAlchemy DB session.
+        user (User): The authenticated user making the request.
+
+    Returns:
+        dict: A confirmation message stating the project has been deleted.
+
+    Raises:
+        HTTPException:
+            - If the project does not exist or the user is not authorized to delete the project.
+    """
     logger.info(f"User {user.id} requested delete for project {project_id}")
     return delete_project(db, project_id, user_id=user.id)
 
@@ -57,6 +104,20 @@ def list_projects_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Retrieves a list of projects for the authenticated user.
+
+    Args:
+        db (Session): SQLAlchemy DB session.
+        user (User): The authenticated user making the request.
+
+    Returns:
+        dict: A dictionary containing a list of projects with their IDs, names, and creation times.
+
+    Raises:
+        HTTPException:
+            - If no projects are found for the user.
+    """
     projects = db.query(Project).filter(
         Project.user_id == user.id,
         Project.is_deleted == False
@@ -84,6 +145,21 @@ def get_project_by_id(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Retrieves a project by its ID for the authenticated user.
+
+    Args:
+        project_id (int): The ID of the project to retrieve.
+        db (Session): SQLAlchemy DB session.
+        user (User): The authenticated user making the request.
+
+    Returns:
+        dict: A dictionary containing the project's ID, name, and creation time.
+
+    Raises:
+        HTTPException:
+            - If the project is not found or is deleted.
+    """
     project = db.query(Project).filter(
         Project.id == project_id,
         Project.user_id == user.id,

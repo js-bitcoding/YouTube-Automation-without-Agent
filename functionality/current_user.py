@@ -10,6 +10,19 @@ from utils.logging_utils import logger
 jwt_bearer = HTTPBearer()
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(jwt_bearer), db: Session = Depends(get_db)):
+    """
+    Authenticates and returns the current user based on JWT token.
+
+    Args:
+        credentials (HTTPAuthorizationCredentials): Bearer token credentials.
+        db (Session): SQLAlchemy DB session.
+
+    Returns:
+        User: The authenticated user object.
+
+    Raises:
+        HTTPException: If the token is expired, invalid, or user not found.
+    """
     token = credentials.credentials
     token_data = decodeJWT(token)
     logger.info("Token received and decoded.")
@@ -41,6 +54,18 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(jwt_bea
     return user
 
 def admin_only(user: User = Depends(get_current_user)):
+    """
+    Ensures that the current user has admin privileges.
+
+    Args:
+        user (User): The currently authenticated user.
+
+    Returns:
+        User: The same user if they are an admin.
+
+    Raises:
+        HTTPException: If the user is not an admin.
+    """
     if user.role != "admin":
         logger.warning(f"Access denied for User ID {user.id}. Role: {user.role}")
         raise HTTPException(
