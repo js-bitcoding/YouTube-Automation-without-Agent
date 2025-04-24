@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table, UniqueConstraint
 
-timezone = datetime.datetime.utcnow
+timezone = datetime.utcnow
 Base = declarative_base()
 
 chat_session_group = Table(

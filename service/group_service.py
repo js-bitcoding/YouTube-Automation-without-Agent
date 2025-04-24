@@ -9,6 +9,7 @@ from service.script_service import (
     extract_text_from_file,
     analyze_transcript_style,
 )
+from utils.logging_utils import logger
 
 async def process_group_content(
     project_id: int,
@@ -163,6 +164,7 @@ def delete_group(db: Session, group_id: int, user_id: int):
         db.commit()
         return group
     except Exception as e:
+        logger.info(f"Error soft-deleting group: {e}")
         db.rollback()
         return None
 

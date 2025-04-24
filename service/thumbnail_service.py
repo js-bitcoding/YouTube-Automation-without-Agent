@@ -16,6 +16,7 @@ from database.models import Thumbnail, User
 from database.db_connection import SessionLocal
 from config import THUMBNAIL_STORAGE_PATH, GEMINI_API_KEY
 from service.youtube_service import fetch_video_thumbnails
+from utils.logging_utils import logger
 
 API_KEY = GEMINI_API_KEY
 genai.configure(api_key=API_KEY)
@@ -85,6 +86,7 @@ def generate_image_from_input(image_path: str, prompt: str):
                 }
             ]
         )
+        logger.info(f"Full Response:, {response}")
 
         if response and response.candidates:
             for candidate in response.candidates:
@@ -92,11 +94,12 @@ def generate_image_from_input(image_path: str, prompt: str):
                     if hasattr(part, "inline_data"):
                         return part.inline_data.data
                         # return base64.b64encode(part.inline_data.data).decode("utf-8")
-
+        
+        logger.info("❌ No image returned in the response.")
         return None
     
     except Exception as e:
-        print(f"Error generating image: {e}")
+        logger.info(f"Error generating image: {e}")
         return None
 
 def save_thumbnail(video):

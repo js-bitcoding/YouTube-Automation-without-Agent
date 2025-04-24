@@ -14,7 +14,8 @@ import google.generativeai as genai
 from vosk import Model, KaldiRecognizer
 from docx import Document as DocxDocument
 from youtube_transcript_api import YouTubeTranscriptApi
-from config import GEMINI_API_KEY, YOUTUBE_API_KEY, GENERATED_AUDIO_PATH, VOICE_TONE_DIR
+from config import GEMINI_API_KEY, YOUTUBE_API_KEY, VOICE_TONE_DIR
+from utils.logging_utils import logger
 
 GEMINI_API_KEY = GEMINI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
@@ -41,15 +42,20 @@ def analyze_transcript_style(transcript: str):
     tone = ""
     if response and response.text:
         lines = response.text.splitlines()
+        logger.info(f"lines:::{lines}")
         for line in lines:
             if line.lower().startswith("style:"):
                 style = line.split(":", 1)[1].strip()
+                logger.info(f"Style:::{style}")
             if line.lower().startswith("tone:"):
                 tone = line.split(":", 1)[1].strip()
+                logger.info(f"Tone:::{tone}")
         return {"tone": tone, "style": style}
     return "Casual", "Casual"
 
 def generate_script(document_content: str, style: str, tone: str, mode: str = "Short-form"):
+    logger.info(f"Transcript inside the generate with gemini function :::::::: {document_content}")
+    logger.info(f"mode ::: {mode} tone ::: {tone} style ::: {style}")
     prompt = f"""Generate a YouTube video script in {mode} mode with a {tone} tone and {style} style.
         You are an expert YouTube scriptwriter. Your task is to generate a **unique and detailed YouTube video script** while maintaining the **meaning and context** of the provided transcript.  
 
@@ -70,8 +76,10 @@ def generate_script(document_content: str, style: str, tone: str, mode: str = "S
         ### **Generate a new, detailed, and engaging YouTube script based on the above guidelines.**  
         """
 
+    logger.info("Generating Script with the Gemini::::", prompt)
     model = genai.GenerativeModel("gemini-1.5-pro-latest")
     response = model.generate_content(prompt)
+    logger.info(f"Response form Gemini :: {response}")
     if response and response.text:
         formatted_script = response.text.replace("\n", "\n\n")
         return formatted_script
@@ -213,10 +221,12 @@ def fetch_transcript(youtube_url: str):
         return None, "Invalid YouTube URL"
     try:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+        logger.info(f"transcript list :: {transcript_list}")
         transcript_text = " ".join([item["text"] for item in transcript_list])
+        logger.info(f"transcript text :: {transcript_text}")
         return (transcript_text if transcript_text else None), None
     except Exception as e:
-        print(f"No subtitles found for video {video_id}. Trying Whisper transcription...")
+        logger.info(f"No subtitles found for video {video_id}. Trying Whisper transcription...")
 
         unique_filename = f"{uuid.uuid4().hex}.mp3"
         audio_path = os.path.join("tmp", unique_filename)
@@ -260,7 +270,7 @@ def download_audio(video_url: str, output_path: str) -> bool:
         subprocess.run(command, check=True)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Error downloading audio: {e}")
+        logger.info(f"Error downloading audio: {e}")
         return False
 
 def transcribe_audio_with_whisper(audio_path: str) -> str:

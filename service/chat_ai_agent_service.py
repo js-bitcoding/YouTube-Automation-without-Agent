@@ -77,8 +77,12 @@ def initialize_faiss_store(documents: list):
     for doc in documents:
         chunks = splitter.create_documents([doc])
         all_chunks.extend(chunks)
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Chunk {i+1}: {chunk.page_content}")
 
     vectorstore = FAISS.from_documents(all_chunks, ollama_embeddings)
+    logger.info(f"Vectorstore created with {len(all_chunks)} chunks.")
+
     return vectorstore, all_chunks
 
 def generate_response_from_prompt_and_data(group_data: str, user_prompt: str):
@@ -125,8 +129,11 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
         history_prompt += f"Assistant: {record.response}\n"
 
     search_results = vectorstore.similarity_search(user_prompt, k=3)
+
     retrieved_data = "\n\n".join([result.page_content for result in search_results])
     instructions_info = "\n".join([f" Instruction: {instr.content}" for instr in instructions])
+    logger.info("Group Info",group_info)
+    logger.info("Retrieve Data",retrieved_data)
 
     full_prompt = f"""
         You are a highly capable and context-aware assistant helping a user with information from documents, videos, and previous conversations. Use the instructions and retrieved knowledge to respond in a helpful, clear, and tone-adaptive manner.

@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from service.utils import extract_keywords
 from database.models import Video,TrendingTopic
+from utils.logging_utils import logger
 
 def detect_trending_topics(videos, db: Session):
     """Detects trending keywords from video titles and stores them in the database."""
@@ -12,6 +13,7 @@ def detect_trending_topics(videos, db: Session):
 
         existing_video = db.query(Video).filter(Video.video_id == video_id).first()
         if not existing_video:
+            logger.info(f"Skipping trending topic for video_id {video_id} as it does not exist in 'videos' table.")
             continue  
 
         keywords = extract_keywords(video["title"])

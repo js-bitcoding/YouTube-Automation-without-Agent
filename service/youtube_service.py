@@ -12,6 +12,7 @@ from service.engagement_service import (
 )
 from config import YOUTUBE_API_KEY
 from database.models import Video
+from utils.logging_utils import logger
 
 BASE_URL = "https://www.googleapis.com/youtube/v3"
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
@@ -31,6 +32,7 @@ def fetch_video_thumbnails(keyword):
     }
     
     response = requests.get(YOUTUBE_SEARCH_URL, params=params).json()
+    logger.info("YouTube API Response:", response)
     videos = []
     
     for item in response.get("items", []):
@@ -131,6 +133,7 @@ def fetch_youtube_videos(query, max_results=10, duration_category=None, min_view
         stats = item.get("statistics", {})
         duration_str = item.get("contentDetails", {}).get("duration", "PT0S")
         video_duration = parse_duration_to_seconds(duration_str)  
+        logger.info(f"Video ID: {video_ids[i]} | Duration: {video_duration} seconds")
 
         if video_duration == 0:
             continue
@@ -186,6 +189,7 @@ def calculate_ctr(clicks, impressions):
 
 def parse_duration_to_seconds(duration):
     """Convert ISO 8601 duration (e.g., PT1H2M30S) to total seconds.""" 
+    logger.info("Raw Duration String:", duration)
     pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
     match = pattern.match(duration)
     if not match:
@@ -195,7 +199,8 @@ def parse_duration_to_seconds(duration):
     minutes = int(match.group(2) or 0)
     seconds = int(match.group(3) or 0)
 
-    total_seconds = hours * 3600 + minutes * 60 + seconds  
+    total_seconds = hours * 3600 + minutes * 60 + seconds 
+    logger.info("Parsed Duration (Seconds):", total_seconds) 
     
     return total_seconds
 
