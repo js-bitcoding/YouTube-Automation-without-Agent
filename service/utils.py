@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from fastapi import Form, HTTPException
 
-def extract_keywords(text):
+def extract_keywords(text: str) -> list:
     """
     Extracts the top 5 keywords from a given text using TF-IDF.
 

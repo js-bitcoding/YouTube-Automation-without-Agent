@@ -41,3 +41,4 @@ scikit-learn==1.6.1
 yt-dlp==2025.3.31
 PyPDF2
 python-docx
+pydantic[email]

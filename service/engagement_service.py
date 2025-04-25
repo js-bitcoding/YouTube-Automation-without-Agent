@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-def calculate_view_to_subscriber_ratio(views, subscribers):
+def calculate_view_to_subscriber_ratio(views:int, subscribers:int):
     """
     Calculate the View-to-Subscriber ratio.
 
@@ -25,7 +25,7 @@ def calculate_view_to_subscriber_ratio(views, subscribers):
     except (ValueError, TypeError):
         return 0  
 
-def calculate_view_velocity(video):
+def calculate_view_velocity(video:int):
     """
     Estimate how fast a video is gaining views (views per day).
 
@@ -57,7 +57,7 @@ def calculate_view_velocity(video):
     except (ValueError, TypeError):
         return 0  
 
-def calculate_engagement_rate(video):
+def calculate_engagement_rate(video:int):
     """
     Calculate the engagement rate for a video as the percentage of likes and comments relative to views.
 

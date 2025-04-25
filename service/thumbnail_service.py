@@ -25,22 +25,22 @@ MODEL_NAME = "gemini-2.0-flash-exp-image-generation"
 
 os.makedirs(THUMBNAIL_STORAGE_PATH, exist_ok=True)
 
-def detect_faces(image_path):
+def detect_faces(image_path:str):
     img = cv2.imread(image_path)
     face_detector = solutions.face_detection.FaceDetection(min_detection_confidence=0.5)
     results = face_detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     return len(results.detections) if results.detections else 0
 
-def detect_text(image_path):
+def detect_text(image_path:str):
     img = cv2.imread(image_path)
     text = pytesseract.image_to_string(img)
     return bool(text.strip())
 
-def extract_fonts(image_path):
+def extract_fonts(image_path:str):
     img = cv2.imread(image_path)
     return pytesseract.image_to_string(img)
 
-def extract_colors(image_path, color_count=3):
+def extract_colors(image_path:str, color_count=3):
     try:
         color_thief = ColorThief(image_path)
         palette = color_thief.get_palette(color_count=color_count, quality=1)
@@ -50,7 +50,7 @@ def extract_colors(image_path, color_count=3):
     except Exception as e:
         return []
 
-def encode_image(image_path):
+def encode_image(image_path:str):
     """Encodes image as base64 and gets MIME type."""
     mime_type, _ = mimetypes.guess_type(image_path)
     if not mime_type:
@@ -102,7 +102,7 @@ def generate_image_from_input(image_path: str, prompt: str):
         logger.info(f"Error generating image: {e}")
         return None
 
-def save_thumbnail(video):
+def save_thumbnail(video:str):
     """Downloads and saves a thumbnail image locally."""
     response = requests.get(video["thumbnail_url"])
     if response.status_code == 200:
@@ -179,18 +179,18 @@ def store_thumbnails(video_ids: List[str], keyword: str, current_user: User):
 
     return {"message": "Selected thumbnails stored successfully.", "results": results}
 
-def clarity_score(image_path):
+def clarity_score(image_path:str):
     image = cv2.imread(image_path)
     return cv2.Laplacian(image, cv2.CV_64F).var()
 
-def predict_ctr_score(image_path):
+def predict_ctr_score(image_path:str):
     clarity = clarity_score(image_path)
     text_presence = detect_text(image_path)
     face_presence = detect_faces(image_path)
     ctr = 0.5 + (0.1 if text_presence else -0.1) + (0.2 if face_presence else -0.2) + (0.2 if clarity > 100 else -0.2)
     return max(0, min(1, ctr))
 
-def extract_fonts(image_path):
+def extract_fonts(image_path:str):
     text = pytesseract.image_to_string(image_path)
     return text
 
@@ -208,7 +208,7 @@ def detect_emotions(image_path):
     else:
         return None
 
-def validate_thumbnail(image_path, from_url=False):
+def validate_thumbnail(image_path:str, from_url=False):
     if from_url:
         response = requests.get(image_path)
         if response.status_code != 200:

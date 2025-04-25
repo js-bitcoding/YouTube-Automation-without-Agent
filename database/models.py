@@ -1,9 +1,10 @@
-import datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table, UniqueConstraint
 
-timezone = datetime.datetime.utcnow
+timezone = datetime.now(ZoneInfo("Asia/Kolkata"))
 Base = declarative_base()
 
 chat_session_group = Table(
@@ -56,6 +57,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, nullable=False)
     password = Column(String, nullable=False)
+    email_id = Column(String, unique=True, nullable=False)
     is_active = Column(Boolean, default=False)
     role = Column(String, default="user")
     is_deleted = Column(Boolean, default=False)

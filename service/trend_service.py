@@ -4,7 +4,7 @@ from service.utils import extract_keywords
 from database.models import Video,TrendingTopic
 from utils.logging_utils import logger
 
-def detect_trending_topics(videos, db: Session):
+def detect_trending_topics(videos:list, db: Session):
     """Detects trending keywords from video titles and stores them in the database."""
     trending_topics = {}
 

@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+from typing import List, Dict, Optional,Union
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -22,7 +23,7 @@ engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-def fetch_video_thumbnails(keyword):
+def fetch_video_thumbnails(keyword: str) -> List[Dict[str, str]]:
     params = {
         "part": "snippet",
         "q": keyword,
@@ -48,7 +49,7 @@ def fetch_video_thumbnails(keyword):
     
     return videos
 
-def get_published_after(filter_option):
+def get_published_after(filter_option: str) -> Optional[str]:
     """Convert filter option into an ISO 8601 datetime string."""
     now = datetime.utcnow()
 
@@ -66,7 +67,12 @@ def get_published_after(filter_option):
     
     return None 
 
-def fetch_youtube_videos(query, max_results=10, duration_category=None, min_views=None, min_subscribers=None, upload_date=None):
+def fetch_youtube_videos(query: str, 
+    max_results: int = 10, 
+    duration_category: Optional[str] = None, 
+    min_views: Optional[int] = None, 
+    min_subscribers: Optional[int] = None, 
+    upload_date: Optional[str] = None):
     """Fetch YouTube videos with optional filters, excluding Shorts (videos under 60 seconds)."""
     
     if not YOUTUBE_API_KEY:
@@ -181,13 +187,13 @@ def fetch_youtube_videos(query, max_results=10, duration_category=None, min_view
     store_videos_in_db(filtered_videos)  
     return filtered_videos
 
-def calculate_ctr(clicks, impressions):
+def calculate_ctr(clicks: int, impressions: int) -> float:
     """Calculate the CTR (Click-Through Rate)."""
     if impressions == 0:
         return 0  
     return round((clicks / impressions) * 100, 2)
 
-def parse_duration_to_seconds(duration):
+def parse_duration_to_seconds(duration: str) -> int:
     """Convert ISO 8601 duration (e.g., PT1H2M30S) to total seconds.""" 
     logger.info("Raw Duration String:", duration)
     pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
@@ -204,7 +210,7 @@ def parse_duration_to_seconds(duration):
     
     return total_seconds
 
-def store_videos_in_db(videos):
+def store_videos_in_db(videos: List[Dict[str, Union[str, int, float]]]) -> None:
     """Store fetched videos in the database."""
     for video in videos:
         existing_video = session.query(Video).filter_by(video_id=video["video_id"]).first()
@@ -234,7 +240,8 @@ def store_videos_in_db(videos):
         except IntegrityError:
             session.rollback()
 
-def fetch_video_by_id(video_id):
+
+def fetch_video_by_id(video_id: str) -> Dict[str, Union[str, int]]:
     """Fetch details for a single video using its video ID."""
     if not YOUTUBE_API_KEY:
         raise ValueError("YouTube API Key is missing. Check your .env file.")

@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, Query, HTTPException
 from database.db_connection import get_db
+from database.schemas import VideoSaveRequest
 from database.models import Video, Channel
 from database.models import User, UserSavedVideo
 from functionality.current_user import get_current_user
@@ -11,11 +12,6 @@ from utils.logging_utils import logger
 
 router = APIRouter()
 saved_videos = []
-
-class VideoSaveRequest(BaseModel):
-    video_id: str
-    title: str
-    description: str
 
 @router.get("/search/")
 def get_videos(

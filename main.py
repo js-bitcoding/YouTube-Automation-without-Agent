@@ -1,8 +1,7 @@
-import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.db_connection import init_db, engine, Base
-from routes import thumbnail, viral_idea_finder, title_generation, group, chat, project, instructions, admin, sessions
+from routes import thumbnail, viral_idea_finder, title_generation, group, chat, project, instructions, admin, sessions,auth
 
 Base.metadata.create_all(bind=engine)
 

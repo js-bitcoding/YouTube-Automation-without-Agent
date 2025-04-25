@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database.models import User, Project
 from service.project_service import create_project, update_project, delete_project
 from database.db_connection import get_db
-from auth import get_current_user
+from routes.auth import get_current_user
 from utils.logging_utils import logger
 
 project_router = APIRouter(prefix="/projects")

@@ -35,6 +35,10 @@ def signup(user_data: UserRegister, db: Session = Depends(get_db)):
     Returns:
         JSONResponse: A message indicating whether the registration was successful or not.
     """
+    if db.query(User).filter(User.email_id == user_data.email_id, User.is_deleted == False).first():
+        logger.warning(f"Signup failed for email {user_data.email_id}: Email already registered.")
+        raise HTTPException(status_code=400, detail="❌ Email already in use. Please use a different one.")
+
     if user_data.username.strip().lower() == "string" or not user_data.username.strip():
         logger.warning(f"Signup failed for username {user_data.username}: Username cannot be empty.")
         raise HTTPException(status_code=400, detail="Username cannot be empty you need to provide.")
@@ -43,10 +47,6 @@ def signup(user_data: UserRegister, db: Session = Depends(get_db)):
         logger.warning(f"Signup failed for username {user_data.username}: Password cannot be empty.")
         raise HTTPException(status_code=400, detail="Password cannot be empty you need to provide.")
     
-    if user_data.role not in ["user", "admin"]:
-        logger.warning(f"Signup failed for username {user_data.username}: Invalid role '{user_data.role}'.")
-        raise HTTPException(status_code=400, detail="❌ Invalid role. Only 'user' and 'admin' are allowed.")
-
     existing_user = db.query(User).filter(
         User.username == user_data.username,
         User.is_deleted == False
@@ -60,15 +60,16 @@ def signup(user_data: UserRegister, db: Session = Depends(get_db)):
     new_user = User(
         username=user_data.username, 
         password=hashed_password,
-        role=user_data.role
+        email_id=user_data.email_id,
+        role="user"
         )
     
     db.add(new_user)
     db.commit()
 
-    logger.info(f"User {user_data.username} registered successfully as {user_data.role}.")
+    logger.info(f"User {user_data.username} registered successfully")
     return JSONResponse(status_code=201,
-        content={"message": f"✅ Registered successfully as {user_data.role}! Now you can login"}
+        content={"message": f"✅ Registered successfully as ! Now you can login"}
     )
 
 @router.post("/login")

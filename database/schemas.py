@@ -1,12 +1,17 @@
 import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 class UserRegister(BaseModel):
     username: str 
     password: str 
-    role: str = Field(default="user")
+    email_id : EmailStr
     
+class VideoSaveRequest(BaseModel):
+    video_id: str
+    title: str
+    description: str
+
 class UserLogin(BaseModel):
     username: str 
     password: str 
