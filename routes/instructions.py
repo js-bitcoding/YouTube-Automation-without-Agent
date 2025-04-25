@@ -119,7 +119,7 @@ def delete_instruction(
 
     if not instruction:
         logger.warning(f"Delete failed: Instruction {instruction_id} not found.")
-        raise HTTPException(status_code=404, detail="Instruction not found or already deleted")
+        raise HTTPException(status_code=404, detail="Instruction not found")
 
     if instruction.user_id != user.id:
         logger.warning(f"Unauthorized delete attempt by user {user.id} on instruction {instruction_id}")

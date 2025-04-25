@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Form
 from sqlalchemy.orm import Session
 from database.models import User, Project
-from database.schemas import ProjectCreate, ProjectUpdate
 from service.project_service import create_project, update_project, delete_project
 from database.db_connection import get_db
 from auth import get_current_user
@@ -11,7 +10,7 @@ project_router = APIRouter(prefix="/projects")
 
 @project_router.post("/create")
 def create_project_api(
-    project: ProjectCreate, 
+    name: str = Form(...), 
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -32,16 +31,21 @@ def create_project_api(
     """
     logger.info(f"User {user.id} requested create for new project")
 
-    if not project.name or len(project.name.strip()) == 0:
-        logger.error(f"User {user.id} tried to create a project with an invalid name: {project.name}")
-        raise HTTPException(status_code=400, detail="Project name cannot be empty.")
+    if not isinstance(name, str):
+        logger.error(f"User {user.id} tried to create a project with an invalid name: {name}")
+        raise HTTPException(status_code=422, detail="Project name cannot be empty.")
     
-    return create_project(db=db, name=project.name, user_id=user.id)
+    if name.strip().lower() == "string" or not name.strip():
+        logger.error(f"User {user.id} submitted an invalid project name: {name}")
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+
+    
+    return create_project(db=db, name=name.strip(), user_id=user.id)
 
 @project_router.put("/{project_id}")
 def update_project_api(
     project_id: int, 
-    payload: ProjectUpdate, 
+    project_name: str = Form(...), 
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -64,11 +68,15 @@ def update_project_api(
     """
     logger.info(f"User {user.id} requested update for project {project_id}")
 
-    if payload.name and len(payload.name.strip()) == 0:
-        logger.error(f"User {user.id} tried to update project {project_id} with an invalid name: {payload.name}")
+    if not isinstance(project_name, str):
+        logger.error(f"User {user.id} tried to update project {project_id} with an invalid name: {name}")
         raise HTTPException(status_code=400, detail="Project name cannot be empty.")
 
-    updated_project = update_project(db, project_id, payload.name, user_id=user.id)
+    if project_name.strip().lower() == "string" or not project_name.strip():
+        logger.error(f"User {user.id} submitted an invalid project name: {project_name}")
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+    
+    updated_project = update_project(db, project_id, project_name, user_id=user.id)
     if not updated_project:
         logger.error(f"User {user.id} tried to update a non-existing project: {project_id}")
         raise HTTPException(status_code=404, detail="Project not found.")

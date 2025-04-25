@@ -82,7 +82,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(a
     """
     user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found or already deleted")
+        raise HTTPException(status_code=404, detail="User not found")
     
     user.is_deleted = True
     db.commit()

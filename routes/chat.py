@@ -178,7 +178,7 @@ def delete_conversation(
     
     if not convo:
         logger.error(f"Unauthorized access or conversation not found: {conversation_id} for User ID {current_user.id}")
-        raise HTTPException(status_code=404, detail="Conversation not found or Already deleted")
+        raise HTTPException(status_code=404, detail="Conversation not found")
     
     convo.is_deleted = True
     db.commit()

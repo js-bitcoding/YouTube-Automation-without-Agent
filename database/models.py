@@ -170,7 +170,7 @@ class Thumbnail(Base):
 class Document(Base):
     __tablename__ = "documents"
 
-    __table_args__ = (UniqueConstraint("filename", "group_id", name="unique_filename_per_group"),)
+    # __table_args__ = (UniqueConstraint("filename", "group_id", name="unique_filename_per_group"),)
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=True)

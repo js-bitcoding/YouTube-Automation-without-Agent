@@ -150,7 +150,7 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
     
     if not session:
         logger.error(f"Unauthorized access or session not found: {session_id} for User ID {current_user.id}")
-        raise HTTPException(status_code=404, detail="Session not found or already deleted")
+        raise HTTPException(status_code=404, detail="Session not found")
     
     session.is_deleted = True
     db.commit()

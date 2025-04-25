@@ -15,6 +15,17 @@ def create_project(db: Session, name: str, user_id: int):
     Returns:
         Project: The newly created project.
     """
+
+    existing = db.query(Project).filter(
+    Project.name == name.strip(),
+    Project.user_id == user_id,
+    Project.is_deleted == False
+    ).first()
+
+    if existing:
+        logger.warning(f"User {user_id} tried to create a duplicate project name: {name}")
+        raise HTTPException(status_code=400, detail="Project with this name already exists.")
+
     project = Project(name=name, user_id=user_id)
     db.add(project)
     db.commit()
@@ -65,7 +76,7 @@ def delete_project(db: Session, project_id: int, user_id: int):
         dict: A message indicating whether the project was successfully deleted or not.
 
     Raises:
-        HTTPException: If the project is not found or already deleted.
+        HTTPException: If the project is not found.
     """
     logger.info(f"inside the project delete function")
     project = db.query(Project).filter(
@@ -86,7 +97,7 @@ def delete_project(db: Session, project_id: int, user_id: int):
             logger.info(f"Error deleting project {project_id}: {e}")
             return {"error": "Failed to delete project"}
     else:
-        raise HTTPException(status_code=404, detail="Project not found or already deleted")
+        raise HTTPException(status_code=404, detail="Project not found")
 
 def list_projects(db: Session, user_id: int):
     """

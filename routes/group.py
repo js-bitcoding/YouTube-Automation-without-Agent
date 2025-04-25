@@ -1,10 +1,10 @@
 import datetime
 from typing import List
+from starlette.datastructures import UploadFile as UploadFileStar
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from functionality.current_user import get_current_user
-from database.schemas import GroupUpdate
 from service.group_service import (
     get_user_groups_with_content, 
     update_group, 
@@ -20,7 +20,7 @@ group_router = APIRouter(prefix="/groups")
 
 @group_router.post("/create-empty")
 async def create_empty_group(
-    project_id: int = Form(...),
+    project_id: str = Form(...),
     name: str = Form("Untitled Group"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -37,12 +37,22 @@ async def create_empty_group(
     Returns:
         dict: Confirmation message and details of the newly created group.
     """
+    if project_id.strip().lower() == "string" or not project_id.strip():
+        raise HTTPException(status_code=400, detail="❌ project_id cannot be empty or 'string'.")
+
+    try:
+        project_id = int(project_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="❌ project_id must be a valid integer.")
+
+    if name.strip().lower() == "string" or not name.strip():
+        raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
     logger.info(f"Creating empty group for project ID {project_id} by user {current_user.id}")
 
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
     if not project:
-        logger.warning("Invalid or deleted project")
-        raise HTTPException(status_code=400, detail="Invalid or deleted project.")
+        logger.warning("Project not found.")
+        raise HTTPException(status_code=400, detail="Project not found.")
 
     new_group = Group(
         name=name,
@@ -63,10 +73,10 @@ async def create_empty_group(
         "created_time": new_group.created_time.isoformat()
     })
 
-@group_router.put("/{group_id}")
+@group_router.put("/{group_id}/")
 def update_group_api(
     group_id: int, 
-    payload: GroupUpdate, 
+    group_name: str = Form(...), 
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
     ):
@@ -74,8 +84,8 @@ def update_group_api(
     Updates a group's name for the specified group ID.
 
     Args:
-        group_id (int): ID of the group to update.
-        payload (GroupUpdate): Object containing updated group details (e.g., name).
+        group_id (str): ID of the group to update (as string to allow validation).
+        name (str): New name for the group.
         db (Session): SQLAlchemy DB session.
         current_user (User): Authenticated user.
 
@@ -83,11 +93,14 @@ def update_group_api(
         Group: The updated group details.
 
     Raises:
-        HTTPException: If the user is unauthorized to update the group.
+        HTTPException: If the user is unauthorized or input is invalid.
     """
-    logger.info(f"User {current_user.id} is updating group {group_id} with name '{payload.name}'")
+    if group_name.strip().lower() == "string" or not group_name.strip():
+        raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
     
-    group = update_group(db, group_id, payload.name, current_user.id)
+    logger.info(f"User {current_user.id} is updating group {group_id} with name '{group_name}'")
+    
+    group = update_group(db, group_id, group_name.strip(), current_user.id)
     if not group:
         logger.warning(f"Unauthorized update attempt for group {group_id} by user {current_user.id}")
         raise HTTPException(status_code=403, detail="You are not authorized to update this group")
@@ -100,6 +113,7 @@ async def update_group_content(
     project_id: int = Form(...),
     group_id: int = Form(...),
     files: List[UploadFile] = File(None),
+    # files: Annotated[Union[List[UploadFile], None], File(description="Optional files")] = None,
     youtube_links: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -130,8 +144,8 @@ async def update_group_content(
         Project.is_deleted == False
         ).first()
     if not project:
-        logger.error("Project not found or deleted")
-        raise HTTPException(status_code=400, detail="Project not found or has been deleted.")
+        logger.error("Project not found")
+        raise HTTPException(status_code=400, detail="Project not found.")
 
     group = db.query(Group).filter(
         Group.id == group_id,
@@ -140,9 +154,20 @@ async def update_group_content(
     ).first()
 
     if not group:
-        logger.warning("Group not found or unauthorized")
-        raise HTTPException(status_code=404, detail="Group not found or unauthorized.")
+        logger.warning("Group not found")
+        raise HTTPException(status_code=404, detail="Group not found.")
+    
+    if not files and not youtube_links:
+        logger.warning("No content provided in request")
+        raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
+    valid_files = [file for file in files or [] if isinstance(file, UploadFileStar)]
+    valid_links = [link for link in youtube_links or [] if link.strip()]
+
+    if not valid_files and not valid_links:
+        logger.warning("No content provided in request")
+        raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
+    
     logger.info(f"Creating group content for project {project_id}, group {group_id}, user {current_user.id}")
     results = await process_group_content(
         project_id, group_id, files, youtube_links, db, current_user
@@ -249,14 +274,14 @@ def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user:
         dict: Confirmation message indicating successful deletion.
 
     Raises:
-        HTTPException: If the group is not found, already deleted, or the user is unauthorized.
+        HTTPException: If the group is not found, or the user is unauthorized.
     """
     logger.info(f"User {current_user.id} requesting delete for group {group_id}")
 
     group = delete_group(db, group_id, current_user.id)
     if not group:
-        logger.warning("group not found or already group deleted")
-        raise HTTPException(status_code=403, detail="group not found or already group deleted")
+        logger.warning("group not found ")
+        raise HTTPException(status_code=403, detail="group not found")
     
     logger.info(f"Group {group_id} deleted successfully by user {current_user.id}")
     return {"message": "Group deleted successfully"}

@@ -66,6 +66,7 @@ class InstructionOut(InstructionBase):
     id: int
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    is_activate: bool
     is_deleted: bool
 
     class Config:
