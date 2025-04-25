@@ -19,6 +19,26 @@ async def process_group_content(
     db: Session,
     current_user: User
 ) -> dict:
+    """
+    Processes uploaded files and YouTube links, extracting relevant content and storing it in the database.
+
+    Args:
+        project_id (int): The ID of the project the group belongs to.
+        group_id (Optional[int]): The ID of the group. If 0, a new group is created.
+        files (List[UploadFile]): A list of uploaded files (PDF, DOCX, or TXT).
+        youtube_links (List[str]): A list of YouTube video URLs.
+        db (Session): The database session to interact with the database.
+        current_user (User): The current user who is uploading the files and videos.
+
+    Returns:
+        dict: A dictionary with the results of processing the documents and videos. It contains two lists:
+            - "documents": A list of dictionaries with filenames and status messages for each processed document.
+            - "videos": A list of dictionaries with video URLs, extracted transcript excerpts, and status messages for each processed video.
+            - "group": If a new group was created, a message with the group ID.
+        
+    Raises:
+        HTTPException: If the group is not found for the given project.
+    """
     results = {"documents": [], "videos": []}
 
     if group_id == 0:
@@ -123,7 +143,18 @@ async def process_group_content(
 
     return results
 
-def create_group(db: Session, name: str, project_name: str, docs: list, links: list):
+def create_group(db: Session, name: str, project_name: str):
+    """
+    Creates a new group in the database with the given name and project.
+
+    Args:
+        db (Session): Database session.
+        name (str): Group name.
+        project_name (str): Associated project name.
+
+    Returns:
+        Group: The created group object.
+    """
     group = Group(name=name, project_id=project_name)
     db.add(group)
     db.commit()
@@ -131,6 +162,18 @@ def create_group(db: Session, name: str, project_name: str, docs: list, links: l
     return group
 
 def update_group(db: Session, group_id: int, name: str, user_id: int):
+    """
+    Updates the name of an existing group if the user is the owner and the group is not deleted.
+
+    Args:
+        db (Session): Database session.
+        group_id (int): ID of the group to update.
+        name (str): New name for the group.
+        user_id (int): ID of the user requesting the update.
+
+    Returns:
+        Group or None: The updated group object if successful, otherwise None.
+    """
     group = db.query(Group).filter(
         Group.id == group_id,
         Group.is_deleted == False
@@ -148,6 +191,17 @@ def update_group(db: Session, group_id: int, name: str, user_id: int):
     return group
 
 def delete_group(db: Session, group_id: int, user_id: int):
+    """
+    Soft deletes a group if the user is the owner and the group exists.
+
+    Args:
+        db (Session): Database session.
+        group_id (int): ID of the group to delete.
+        user_id (int): ID of the user requesting the deletion.
+
+    Returns:
+        Group or None: The soft-deleted group if successful, otherwise None.
+    """
     group = db.query(Group).filter(
         Group.id == group_id,
         Group.is_deleted == False
@@ -169,6 +223,19 @@ def delete_group(db: Session, group_id: int, user_id: int):
         return None
 
 def get_user_groups_with_content(user_id: int, db: Session):
+    """
+    Retrieves all active groups for a user along with associated documents and videos.
+
+    Args:
+        user_id (int): ID of the user for whom to fetch groups.
+        db (Session): Database session.
+
+    Returns:
+        list: A list of groups, each with their associated documents and videos.
+
+    Raises:
+        HTTPException: If no groups are found for the user.
+    """
     groups = db.query(Group).filter(
         Group.user_id == user_id,
         Group.is_deleted == False
@@ -205,6 +272,20 @@ def get_user_groups_with_content(user_id: int, db: Session):
     return group_list
 
 def get_user_group_with_content_by_id(group_id: int, user_id: int, db: Session):
+    """
+    Retrieves a specific group by its ID for a user along with associated documents and videos.
+
+    Args:
+        group_id (int): The ID of the group to retrieve.
+        user_id (int): The ID of the user to whom the group belongs.
+        db (Session): The database session.
+
+    Returns:
+        dict: A dictionary containing the group's details, documents, and videos.
+
+    Raises:
+        HTTPException: If the group is not found for the user.
+    """
     group = db.query(Group).filter(
         Group.id == group_id,
         Group.user_id == user_id,

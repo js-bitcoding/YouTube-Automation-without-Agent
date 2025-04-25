@@ -1,7 +1,7 @@
 import datetime
 from typing import List
 from starlette.datastructures import UploadFile as UploadFileStar
-from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from functionality.current_user import get_current_user
@@ -18,9 +18,9 @@ from utils.logging_utils import logger
 
 group_router = APIRouter(prefix="/groups")
 
-@group_router.post("/create-empty")
+@group_router.post("/create_empty/")
 async def create_empty_group(
-    project_id: str = Form(...),
+    project_id: str = Query(...),
     name: str = Form("Untitled Group"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -76,7 +76,7 @@ async def create_empty_group(
 @group_router.put("/{group_id}/")
 def update_group_api(
     group_id: int, 
-    group_name: str = Form(...), 
+    group_name: str = Query(...), 
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
     ):
@@ -110,11 +110,10 @@ def update_group_api(
 
 @group_router.put("/update-content")
 async def update_group_content(
-    project_id: int = Form(...),
-    group_id: int = Form(...),
+    project_id: int = Query(...),
+    group_id: int = Query(...),
     files: List[UploadFile] = File(None),
-    # files: Annotated[Union[List[UploadFile], None], File(description="Optional files")] = None,
-    youtube_links: List[str] = Form(default=[]),
+    youtube_links: List[str] = Query(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -180,10 +179,10 @@ async def update_group_content(
 
 @group_router.delete("/delete-content")
 async def delete_group_content(
-    project_id: int = Form(...),
-    group_id: int = Form(...),
-    document_ids: List[int] = Form(default=[]),
-    youtube_video_ids: List[int] = Form(default=[]),
+    project_id: int = Query(...),
+    group_id: int = Query(...),
+    document_ids: List[int] = Query(default=[]),
+    youtube_video_ids: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -260,7 +259,7 @@ async def delete_group_content(
     logger.info(f"Deleted content result: {results}")
     return JSONResponse(content=results)
 
-@group_router.delete("/{group_id}")
+@group_router.delete("/{group_id}/")
 def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Deletes a group after validating user permissions.
@@ -286,7 +285,7 @@ def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user:
     logger.info(f"Group {group_id} deleted successfully by user {current_user.id}")
     return {"message": "Group deleted successfully"}
 
-@group_router.get("/user-groups-content")
+@group_router.get("/groups_content/")
 def get_user_groups_with_content_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -312,7 +311,7 @@ def get_user_groups_with_content_api(
     
     return {"groups": content}
 
-@group_router.get("/user-group-content/{group_id}")
+@group_router.get("/group_content/{group_id}/")
 def get_user_group_with_content_api(
     group_id: int,
     db: Session = Depends(get_db),

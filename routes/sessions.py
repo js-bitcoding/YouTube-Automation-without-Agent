@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List
 from database.db_connection import get_db
-from database.schemas import ChatCreate
 from functionality.current_user import get_current_user
 from database.models import User, Group, ChatConversation, ChatSession, chat_session_group
 from utils.logging_utils import logger
@@ -36,7 +36,7 @@ def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends
     logger.info(f"{len(sessions)} chat sessions retrieved for User ID {current_user.id}.")
     return sessions
 
-@sessions_router.get("/{session_id}")
+@sessions_router.get("/{session_id}/")
 def get_session_by_id(
     session_id: int,
     db: Session = Depends(get_db),
@@ -70,9 +70,10 @@ def get_session_by_id(
     logger.info(f"Chat session with ID {session_id} retrieved for User ID {current_user.id}.")
     return session
 
-@sessions_router.post("/create")
-def create_chat_api(
-    payload: ChatCreate,
+@sessions_router.post("/create/")
+def create_session_api(
+    name: str = Query(...),
+    group_ids: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -92,7 +93,16 @@ def create_chat_api(
         HTTPException:
             - If no valid groups are found for the authenticated user.
     """
-    unique_group_ids = list(set(payload.group_ids))
+    if not name.strip():
+        raise HTTPException(status_code=422, detail="Chat session name cannot be empty")
+
+    if not group_ids:
+        raise HTTPException(status_code=422, detail="At least one group ID must be provided")
+
+    if not all(isinstance(gid, int) for gid in group_ids):
+        raise HTTPException(status_code=422, detail="All group IDs must be integers")
+    
+    unique_group_ids = list(set(group_ids))
     logger.info(f"Creating chat session with groups: {unique_group_ids} for User ID {current_user.id}")
 
     groups = db.query(Group).filter(Group.id.in_(unique_group_ids), Group.user_id == current_user.id).all()
@@ -102,7 +112,7 @@ def create_chat_api(
         raise HTTPException(status_code=400, detail="No valid groups found for the user")
 
     chat_session = ChatSession(
-        name=payload.name,
+        name=name,
     )
     db.add(chat_session)
     db.commit()
@@ -112,7 +122,7 @@ def create_chat_api(
     db.commit()
 
     chat_conversation = ChatConversation(
-        name=payload.name,
+        name=name,
         chat_session_id=chat_session.id,
     )
     db.add(chat_conversation)
@@ -126,7 +136,7 @@ def create_chat_api(
         "associated_group_ids": [g.id for g in groups]
     }
 
-@sessions_router.delete("/delete")
+@sessions_router.delete("/delete/")
 def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Marks a chat session as deleted for the authenticated user.

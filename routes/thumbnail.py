@@ -26,6 +26,16 @@ def fetch_thumbnails(
     keyword: str = Query(...),
     user: User = Depends(get_current_user)
     ):
+    """
+    Fetches thumbnail previews based on a keyword.
+
+    Args:
+        keyword (str): Search keyword to fetch related thumbnails.
+        user (User): Current user fetching the thumbnails.
+
+    Returns:
+        dict: A message and the fetched thumbnail results.
+    """
     results = fetch_thumbnails_preview(keyword)
     logger.info(f"Fetched thumbnails for preview with keyword '{keyword}' by user {user.id}")
     return {"message": "Fetched thumbnails for preview.", "results": results}
@@ -36,6 +46,17 @@ def store_selected(
     keyword: str = Query(...),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Stores selected thumbnails for a given list of video IDs.
+
+    Args:
+        video_ids (List[str]): List of video IDs to store thumbnails for.
+        keyword (str): Search keyword associated with the thumbnails.
+        current_user (User): Current user storing the thumbnails.
+
+    Returns:
+        dict: The result of the thumbnail storage process.
+    """
     result = store_thumbnails(video_ids, keyword, current_user)
     logger.info(f"User {current_user.id} stored selected thumbnails with keyword '{keyword}'")
     return result
@@ -49,6 +70,20 @@ def search_thumbnails(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Searches for thumbnails based on user-specific filters.
+
+    Args:
+        keyword (str, optional): Keyword associated with the thumbnail.
+        text (str, optional): Text detected in the thumbnail.
+        emotion (str, optional): Emotion detected in the thumbnail.
+        min_faces (int, optional): Minimum number of faces detected in the thumbnail.
+        db (Session): Database session.
+        user (User): Current authenticated user.
+
+    Returns:
+        dict: List of thumbnails matching the search criteria.
+    """
     query = db.query(Thumbnail).filter(Thumbnail.user_id == user.id)
 
     if keyword:
@@ -94,6 +129,17 @@ def validate_thumbnail_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """
+    Validates a thumbnail uploaded by the user.
+
+    Args:
+        file (UploadFile): The thumbnail file to be validated.
+        db (Session): Database session.
+        user (User): Current authenticated user.
+
+    Returns:
+        dict: Validation result for the uploaded thumbnail.
+    """
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
     temp_path = os.path.join(temp_dir, file.filename)
@@ -112,6 +158,16 @@ def get_my_thumbnails(
     db: Session = Depends(get_db), 
     user: User = Depends(get_current_user)
     ):
+    """
+    Retrieves all thumbnails saved by the current user.
+
+    Args:
+        db (Session): Database session.
+        user (User): Current authenticated user.
+
+    Returns:
+        list: List of thumbnails associated with the user.
+    """
     thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
     logger.info(f"User {user.id} retrieved {len(thumbnails)} thumbnails.")
     return [
@@ -130,14 +186,25 @@ def get_my_thumbnails(
         for thumb in thumbnails
     ]
 
-@thumbnail_router.post("/generate-thumbnail/")
+@thumbnail_router.post("/generate_thumbnail/")
 async def generate_thumbnail(
     prompt: str = Form(...), 
     image: UploadFile = File(...),
     filename: str = Form(None),
     user: User = Depends(get_current_user)
     ):
+    """
+    Generates a thumbnail using a provided image and prompt with Stable Diffusion.
 
+    Args:
+        prompt (str): Text prompt for generating the thumbnail.
+        image (UploadFile): Image file to base the generation on.
+        filename (str, optional): Desired filename for the output thumbnail (should end with .png).
+        user (User): Current authenticated user.
+
+    Returns:
+        dict: Message indicating success and path of the generated thumbnail.
+    """
     contents = await image.read()
     image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
 

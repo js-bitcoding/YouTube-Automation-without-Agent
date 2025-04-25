@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, Query
 from sqlalchemy.orm import Session
 from database.models import User, Project
 from service.project_service import create_project, update_project, delete_project
@@ -8,9 +8,9 @@ from utils.logging_utils import logger
 
 project_router = APIRouter(prefix="/projects")
 
-@project_router.post("/create")
+@project_router.post("/create/")
 def create_project_api(
-    name: str = Form(...), 
+    name: str = Query(...), 
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -39,13 +39,12 @@ def create_project_api(
         logger.error(f"User {user.id} submitted an invalid project name: {name}")
         raise HTTPException(status_code=400, detail="Project name cannot be empty")
 
-    
     return create_project(db=db, name=name.strip(), user_id=user.id)
 
-@project_router.put("/{project_id}")
+@project_router.put("/{project_id}/")
 def update_project_api(
     project_id: int, 
-    project_name: str = Form(...), 
+    project_name: str = Query(...), 
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -83,7 +82,7 @@ def update_project_api(
 
     return updated_project
 
-@project_router.delete("/{project_id}")
+@project_router.delete("/{project_id}/")
 def delete_project_api(
     project_id: int, 
     db: Session = Depends(get_db),
@@ -107,7 +106,7 @@ def delete_project_api(
     logger.info(f"User {user.id} requested delete for project {project_id}")
     return delete_project(db, project_id, user_id=user.id)
 
-@project_router.get("/list")
+@project_router.get("/list/")
 def list_projects_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -147,7 +146,7 @@ def list_projects_api(
         ]
     }
 
-@project_router.get("/get/{project_id}")
+@project_router.get("/get/{project_id}/")
 def get_project_by_id(
     project_id: int,
     db: Session = Depends(get_db),

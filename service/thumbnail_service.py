@@ -64,7 +64,14 @@ def encode_image(image_path:str):
 
 def generate_image_from_input(image_path: str, prompt: str):
     """
-    Uses Gemini to generate an image based on an input image and user prompt.
+    Generates an image based on an input image and user prompt using the Gemini AI model.
+
+    Args:
+        image_path (str): The path to the input image.
+        prompt (str): The user-provided prompt to guide the image generation.
+
+    Returns:
+        str or None: The generated image data (base64-encoded), or None if the generation failed.
     """
     try:
         image_data = encode_image(image_path)
@@ -116,7 +123,16 @@ def save_thumbnail(video:str):
     return None
 
 def fetch_thumbnails_preview(keyword: str):
-    """Fetch and return top thumbnails for preview (no storage)."""
+    """
+    Fetch and return preview details for thumbnails associated with a keyword without storing them.
+
+    Args:
+        keyword (str): The keyword to search for video thumbnails.
+
+    Returns:
+        list: A list of dictionaries containing video ID, title, thumbnail URL, and validation results
+              (text detection, face detection, emotions, color palette).
+    """
     videos = fetch_video_thumbnails(keyword)
     results = []
 
@@ -135,7 +151,20 @@ def fetch_thumbnails_preview(keyword: str):
     return results
 
 def store_thumbnails(video_ids: List[str], keyword: str, current_user: User):
-    """Store thumbnails from specific video IDs only."""
+    """
+    Store validated thumbnails from specific YouTube video IDs associated with a keyword.
+
+    Args:
+        video_ids (List[str]): List of YouTube video IDs to filter.
+        keyword (str): The keyword to associate with the thumbnails.
+        current_user (User): The user storing the thumbnails.
+
+    Returns:
+        dict: A message indicating the result and the details of stored thumbnails.
+
+    Notes:
+        The function fetches video thumbnails, validates them, and stores the results in the database.
+    """
     videos = fetch_video_thumbnails(keyword)
     selected_videos = [v for v in videos if v["video_id"] in video_ids]
 
@@ -195,6 +224,15 @@ def extract_fonts(image_path:str):
     return text
 
 def detect_emotions(image_path):
+    """
+    Detect the dominant emotion in a given image using the FER (Facial Expression Recognition) library.
+
+    Args:
+        image_path (str): Path to the image file.
+
+    Returns:
+        str: The dominant emotion detected (e.g., "happy", "sad"), or None if no emotions are detected.
+    """
     img = cv2.imread(image_path)
 
     detector = FER(mtcnn=True)

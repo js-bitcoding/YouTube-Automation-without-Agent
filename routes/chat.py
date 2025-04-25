@@ -6,9 +6,9 @@ from database.db_connection import get_db
 from functionality.current_user import get_current_user
 from utils.logging_utils import logger
 
-chat_router = APIRouter(prefix="/chats")
+chat_router = APIRouter(prefix="/conversations")
 
-@chat_router.get("/conversations")
+@chat_router.get("/")
 def get_all_conversations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Retrieves all non-deleted conversations for the current user.
@@ -32,7 +32,7 @@ def get_all_conversations(db: Session = Depends(get_db), current_user: User = De
     logger.info(f"{len(get_all_cov)} conversations retrieved for User ID {current_user.id}")
     return get_all_cov
 
-@chat_router.post("/conversations")
+@chat_router.post("/create/")
 def create_conversation(
     session_id: int,
     name: str,
@@ -71,7 +71,7 @@ def create_conversation(
     logger.info(f"Conversation created with ID {conversation.id} for Session ID {session_id}")
     return conversation
 
-@chat_router.put("/conversations/{conversation_id}")
+@chat_router.put("/update/{conversation_id}/")
 def update_conversation_name(
     conversation_id: int,
     name: str,
@@ -108,7 +108,7 @@ def update_conversation_name(
     logger.info(f"Conversation ID {conversation_id} renamed to '{name}' by User ID {current_user.id}")
     return {"message": "Conversation name updated"}
 
-@chat_router.get("/conversations/{conversation_id}")
+@chat_router.get("/get/{conversation_id}/")
 def get_conversation_by_id(
     conversation_id: int,
     db: Session = Depends(get_db),
@@ -154,7 +154,7 @@ def get_conversation_by_id(
         ]
     }
 
-@chat_router.delete("/conversations/{conversation_id}")
+@chat_router.delete("/delete/{conversation_id}/")
 def delete_conversation(
     conversation_id: int,
     db: Session = Depends(get_db),

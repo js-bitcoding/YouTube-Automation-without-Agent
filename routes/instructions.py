@@ -10,7 +10,7 @@ from utils.logging_utils import logger
 
 instruction_router = APIRouter(prefix="/instruction")
 
-@instruction_router.post("/create", response_model=InstructionOut)
+@instruction_router.post("/create/", response_model=InstructionOut)
 def create_instruction(
     instruction: InstructionCreate,
     db: Session = Depends(get_db),
@@ -43,7 +43,7 @@ def create_instruction(
     logger.info(f"Instruction created by user {user.id}: {new_instruction.name}")
     return new_instruction
 
-@instruction_router.put("/update-{instruction_id}", response_model=InstructionOut)
+@instruction_router.put("/update/{instruction_id}/", response_model=InstructionOut)
 def update_instruction(
     instruction_id: int,
     update_data: InstructionUpdate,
@@ -93,7 +93,7 @@ def update_instruction(
     logger.info(f"Instruction {instruction_id} updated by user {user.id}")
     return instruction
 
-@instruction_router.delete("/delete-instruction-{instruction_id}/")
+@instruction_router.delete("/delete/{instruction_id}/")
 def delete_instruction(
     instruction_id: int,
     db: Session = Depends(get_db),
@@ -130,7 +130,7 @@ def delete_instruction(
     logger.info(f"Instruction {instruction_id} marked as deleted by user {user.id}")
     return {"detail": "Instruction deleted"}
 
-@instruction_router.get("/get-my-instructions/", response_model=List[InstructionOut])
+@instruction_router.get("/get/", response_model=List[InstructionOut])
 def get_my_instructions(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
@@ -161,7 +161,7 @@ def get_my_instructions(
     logger.info(f"Instructions retrieved for user {user.id}")
     return instructions
 
-@instruction_router.get("/get-my-instructions/{instruction_id}", response_model=InstructionOut)
+@instruction_router.get("/get/{instruction_id}/", response_model=InstructionOut)
 def get_instruction_by_id(
     instruction_id: int,
     db: Session = Depends(get_db),
@@ -195,7 +195,7 @@ def get_instruction_by_id(
     logger.info(f"Instruction with ID {instruction_id} retrieved for user {user.id}")
     return instruction
 
-@instruction_router.put("/activate-instruction-{instruction_id}/", response_model=InstructionOut)
+@instruction_router.put("/activate/{instruction_id}/", response_model=InstructionOut)
 def activate_instruction(
     instruction_id: int,
     db: Session = Depends(get_db),

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 admin_router = APIRouter()
 
-@admin_router.get("/count", response_model=UserCountResponse)
+@admin_router.get("/user_count/", response_model=UserCountResponse)
 def get_user_count(db: Session = Depends(get_db), _: User = Depends(admin_only)):
     """
     Returns the total count and list of all active (non-deleted) users.
@@ -34,7 +34,7 @@ def get_user_count(db: Session = Depends(get_db), _: User = Depends(admin_only))
         raise HTTPException(status_code=500, detail="⚠️ Failed to fetch users")
 
 
-@admin_router.put("/{user_id}")
+@admin_router.put("/{user_id}/")
 def update_user(
     user_id: int,
     username: str = None,
@@ -89,7 +89,7 @@ def update_user(
         db.rollback()
         raise HTTPException(status_code=500, detail="⚠️ Failed to update user")
 
-@admin_router.delete("/{user_id}")
+@admin_router.delete("/{user_id}/")
 def delete_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin_only)):
     """
     Soft-deletes a user by setting `is_deleted` to True.

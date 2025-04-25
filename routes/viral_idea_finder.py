@@ -23,11 +23,44 @@ def get_videos(
     upload_date: str = Query(None, description="Filter by upload date: today, this_week, this_month, this_year"),
     db: Session = Depends(get_db)
 ):
+    """
+    Search YouTube videos with filters like query, max results, duration, views, 
+    subscribers, and upload date.
+
+    Args:
+        query (str): Search query.
+        max_results (int): Number of results to return (default 10).
+        duration_category (str): Filter by video duration.
+        min_views (int): Minimum views.
+        min_subscribers (int): Minimum subscribers.
+        upload_date (str): Filter by upload date.
+        db (Session): Database session.
+
+    Returns:
+        list: List of videos matching the search criteria.
+    """
     logger.info(f"User is searching for YouTube videos with query: {query}")
     return fetch_youtube_videos(query, max_results, duration_category, min_views, min_subscribers, upload_date)
 
 @router.get("/video/{videoid}")
 def get_video_details(videoid: str):
+    """
+    API endpoint to retrieve details for a specific video by its video ID. 
+
+    This function fetches video information such as title, channel details, views, likes, 
+    comments, and more. If the video is not found, an error message is returned.
+
+    Args:
+        videoid (str): The ID of the video to fetch details for.
+
+    Returns:
+        dict: The details of the video, including its title, channel info, views, likes, 
+              comments, and other relevant metrics.
+
+    Raises:
+        HTTPException: 
+            - 404 if the video is not found.
+    """
     logger.info(f"Fetching details for video {videoid}")
     video_data = fetch_video_by_id(videoid)
     if "error" in video_data:
@@ -42,7 +75,25 @@ def save_video(
     db: Session = Depends(get_db), 
     user: User = Depends(get_current_user)
     ):
-    """API endpoint to save a video by video ID."""
+    """
+    API endpoint to save a video by video ID. It checks if the video and its associated channel 
+    exist in the database and saves them if not. The user can save a video once, and the API 
+    prevents saving the same video multiple times.
+
+    Args:
+        video_id (str): The ID of the video to be saved.
+        db (Session): The database session, injected via dependency.
+        user (User): The current logged-in user, injected via dependency.
+
+    Returns:
+        dict: A message indicating whether the video was saved successfully, 
+              along with the saved video's ID.
+
+    Raises:
+        HTTPException: 
+            - 404 if the video or user is not found.
+            - 400 if the video has already been saved by the user.
+    """
     logger.info(f"User {user.id} is attempting to save video {video_id}")
 
     video_details = fetch_video_by_id(video_id)
@@ -126,8 +177,20 @@ def get_saved_videos(
     db: Session = Depends(get_db), 
     user: User = Depends(get_current_user)
     ):
-    """Retrieve all saved videos for the current user."""
+    """
+    Retrieves all saved videos for the current user.
 
+    Args:
+        db (Session): The database session, injected via dependency.
+        user (User): The current logged-in user, injected via dependency.
+
+    Returns:
+        dict: A dictionary containing a list of saved videos for the user, including details such as
+              video ID, title, channel info, upload date, and engagement metrics.
+
+    Raises:
+        HTTPException: If no saved videos are found for the user, a 404 error is raised.
+    """
     logger.info(f"User {user.id} is fetching their saved videos")
     saved_videos = (
         db.query(Video)

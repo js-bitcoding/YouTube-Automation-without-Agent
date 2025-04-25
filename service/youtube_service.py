@@ -24,6 +24,15 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 def fetch_video_thumbnails(keyword: str) -> List[Dict[str, str]]:
+    """
+    Fetch the thumbnails of YouTube videos based on a search keyword.
+
+    Args:
+        keyword (str): The search keyword for YouTube video titles.
+
+    Returns:
+        list: A list of dictionaries containing video ID, title, and thumbnail URL for each video found.
+    """
     params = {
         "part": "snippet",
         "q": keyword,
@@ -50,7 +59,16 @@ def fetch_video_thumbnails(keyword: str) -> List[Dict[str, str]]:
     return videos
 
 def get_published_after(filter_option: str) -> Optional[str]:
-    """Convert filter option into an ISO 8601 datetime string."""
+    """
+    Convert a filter option (e.g., 'today', 'this week') into an ISO 8601 datetime string.
+
+    Args:
+        filter_option (str): The filter option for the publication date (e.g., 'today', 'this week').
+
+    Returns:
+        str: An ISO 8601 datetime string representing the start of the specified period (e.g., '2025-04-25T00:00:00Z').
+             Returns None if the filter option is invalid.
+    """
     now = datetime.utcnow()
 
     if filter_option == "today":
@@ -188,14 +206,32 @@ def fetch_youtube_videos(query: str,
     return filtered_videos
 
 def calculate_ctr(clicks: int, impressions: int) -> float:
-    """Calculate the CTR (Click-Through Rate)."""
+    """
+    Calculate the Click-Through Rate (CTR) as a percentage.
+
+    Args:
+        clicks (int): Number of clicks.
+        impressions (int): Number of impressions.
+
+    Returns:
+        float: The CTR as a percentage, rounded to 2 decimal places.
+              Returns 0 if impressions are 0.
+    """
     if impressions == 0:
         return 0  
     return round((clicks / impressions) * 100, 2)
 
 def parse_duration_to_seconds(duration: str) -> int:
-    """Convert ISO 8601 duration (e.g., PT1H2M30S) to total seconds.""" 
-    logger.info("Raw Duration String:", duration)
+    """
+    Convert an ISO 8601 duration string (e.g., 'PT1H2M30S') into total seconds.
+
+    Args:
+        duration (str): Duration in ISO 8601 format.
+
+    Returns:
+        int: Total duration in seconds.
+    """ 
+    logger.info(f"Raw Duration String: {duration}")
     pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
     match = pattern.match(duration)
     if not match:
@@ -206,12 +242,17 @@ def parse_duration_to_seconds(duration: str) -> int:
     seconds = int(match.group(3) or 0)
 
     total_seconds = hours * 3600 + minutes * 60 + seconds 
-    logger.info("Parsed Duration (Seconds):", total_seconds) 
+    logger.info(f"Parsed Duration (Seconds): {total_seconds}") 
     
     return total_seconds
 
 def store_videos_in_db(videos: List[Dict[str, Union[str, int, float]]]) -> None:
-    """Store fetched videos in the database."""
+    """
+    Store a list of video dictionaries in the database if not already present.
+
+    Args:
+        videos (list): List of video data dictionaries.
+    """
     for video in videos:
         existing_video = session.query(Video).filter_by(video_id=video["video_id"]).first()
         if existing_video:
@@ -242,7 +283,18 @@ def store_videos_in_db(videos: List[Dict[str, Union[str, int, float]]]) -> None:
 
 
 def fetch_video_by_id(video_id: str) -> Dict[str, Union[str, int]]:
-    """Fetch details for a single video using its video ID."""
+    """
+    Retrieve details for a YouTube video by ID, including stats and channel info.
+
+    Args:
+        video_id (int): YouTube video ID.
+
+    Returns:
+        dict: Video and channel details or error message.
+
+    Raises:
+        ValueError: If API key is missing.
+    """
     if not YOUTUBE_API_KEY:
         raise ValueError("YouTube API Key is missing. Check your .env file.")
 
