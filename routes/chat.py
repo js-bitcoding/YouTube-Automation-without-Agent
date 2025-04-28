@@ -20,17 +20,22 @@ def get_all_conversations(db: Session = Depends(get_db), current_user: User = De
     Returns:
         list: List of ChatConversation objects.
     """
-    get_all_cov = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
-        Group.user_id == current_user.id,
-        ChatConversation.is_deleted == False
-    ).all()
+    try:
+        get_all_cov = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+            Group.user_id == current_user.id,
+            ChatConversation.is_deleted == False
+        ).all()
 
-    if not get_all_cov:
-        logger.warning(f"No conversations found for User ID {current_user.id}")
-        raise HTTPException(status_code=400, detail="No Conversation Found")
-    
-    logger.info(f"{len(get_all_cov)} conversations retrieved for User ID {current_user.id}")
-    return get_all_cov
+        if not get_all_cov:
+            logger.warning(f"No conversations found for User ID {current_user.id}")
+            raise HTTPException(status_code=400, detail="No Conversation Found")
+
+        logger.info(f"{len(get_all_cov)} conversations retrieved for User ID {current_user.id}")
+        return get_all_cov
+    except Exception as e:
+        logger.exception(f"Error retrieving conversations for User ID {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @chat_router.post("/create/")
 def create_conversation(
@@ -51,25 +56,29 @@ def create_conversation(
     Returns:
         ChatConversation: The newly created conversation object.
     """
-    session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
-        ChatSession.id == session_id,
-        Group.user_id == current_user.id
-    ).first()
-    
-    if not session:
-        logger.error(f"Unauthorized access or session not found: {session_id} for User ID {current_user.id}")
-        raise HTTPException(status_code=404, detail="Session not found or unauthorized access")
+    try:
+        session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
+            ChatSession.id == session_id,
+            Group.user_id == current_user.id
+        ).first()
 
-    if not name or len(name.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Conversation name is required and cannot be empty")
-    
-    conversation = ChatConversation(name=name, chat_session_id=session_id)
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
+        if not session:
+            logger.error(f"Unauthorized access or session not found: {session_id} for User ID {current_user.id}")
+            raise HTTPException(status_code=404, detail="Session not found or unauthorized access")
 
-    logger.info(f"Conversation created with ID {conversation.id} for Session ID {session_id}")
-    return conversation
+        if not name or len(name.strip()) == 0:
+            raise HTTPException(status_code=400, detail="Conversation name is required and cannot be empty")
+
+        conversation = ChatConversation(name=name, chat_session_id=session_id)
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+        logger.info(f"Conversation created with ID {conversation.id} for Session ID {session_id}")
+        return conversation
+    except Exception as e:
+        logger.exception(f"Error creating conversation for Session ID {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @chat_router.put("/update/{conversation_id}/")
 def update_conversation_name(
@@ -90,23 +99,28 @@ def update_conversation_name(
     Returns:
         dict: Confirmation message of the update.
     """
-    convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
-        ChatConversation.id == conversation_id,
-        Group.user_id == current_user.id
-    ).first()
+    try:
+        convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+            ChatConversation.id == conversation_id,
+            Group.user_id == current_user.id
+        ).first()
 
-    if not convo:
-        logger.error(f"Unauthorized access or conversation not found: {conversation_id} for User ID {current_user.id}")
-        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
-    
-    if not name or len(name.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Conversation name cannot be empty")
-    
-    convo.name = name
-    db.commit()
+        if not convo:
+            logger.error(f"Unauthorized access or conversation not found: {conversation_id} for User ID {current_user.id}")
+            raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
 
-    logger.info(f"Conversation ID {conversation_id} renamed to '{name}' by User ID {current_user.id}")
-    return {"message": "Conversation name updated"}
+        if not name or len(name.strip()) == 0:
+            raise HTTPException(status_code=400, detail="Conversation name cannot be empty")
+
+        convo.name = name
+        db.commit()
+
+        logger.info(f"Conversation ID {conversation_id} renamed to '{name}' by User ID {current_user.id}")
+        return {"message": "Conversation name updated"}
+    except Exception as e:
+        logger.exception(f"Error updating conversation ID {conversation_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @chat_router.get("/get/{conversation_id}/")
 def get_conversation_by_id(
@@ -125,34 +139,38 @@ def get_conversation_by_id(
     Returns:
         dict: Conversation details, including the name, timestamps, and associated chats.
     """
-    convo = db.query(ChatConversation).options(
-        joinedload(ChatConversation.chats)
-    ).join(ChatSession).join(chat_session_group).join(Group).filter(
-        ChatConversation.id == conversation_id,
-        Group.user_id == current_user.id,
-        ChatConversation.is_deleted == False
-    ).first()
+    try:
+        convo = db.query(ChatConversation).options(
+            joinedload(ChatConversation.chats)
+        ).join(ChatSession).join(chat_session_group).join(Group).filter(
+            ChatConversation.id == conversation_id,
+            Group.user_id == current_user.id,
+            ChatConversation.is_deleted == False
+        ).first()
 
-    if not convo:
-        logger.error(f"Conversation not found or unauthorized: {conversation_id} for User ID {current_user.id}")
-        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
+        if not convo:
+            logger.error(f"Conversation not found or unauthorized: {conversation_id} for User ID {current_user.id}")
+            raise HTTPException(status_code=404, detail="Conversation not found or unauthorized access")
 
-    logger.info(f"Retrieved conversation ID {conversation_id} with {len(convo.chats)} chat(s) for User ID {current_user.id}")
-    return {
-        "conversation_id": convo.id,
-        "name": convo.name,
-        "created_at": convo.created_at,
-        "updated_at": convo.updated_at,
-        "chats": [
-            {
-                "chat_id": chat.id,
-                "query": chat.query,
-                "response": chat.response,
-                "created_at": chat.created_at
-            }
-            for chat in convo.chats if not chat.is_deleted
-        ]
-    }
+        logger.info(f"Retrieved conversation ID {conversation_id} with {len(convo.chats)} chat(s) for User ID {current_user.id}")
+        return {
+            "conversation_id": convo.id,
+            "name": convo.name,
+            "created_at": convo.created_at,
+            "updated_at": convo.updated_at,
+            "chats": [
+                {
+                    "chat_id": chat.id,
+                    "query": chat.query,
+                    "response": chat.response,
+                    "created_at": chat.created_at
+                }
+                for chat in convo.chats if not chat.is_deleted
+            ]
+        }
+    except Exception as e:
+        logger.exception(f"Error retrieving conversation ID {conversation_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @chat_router.delete("/delete/{conversation_id}/")
 def delete_conversation(
@@ -171,19 +189,24 @@ def delete_conversation(
     Returns:
         dict: Confirmation message of deletion.
     """
-    convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
-        ChatConversation.id == conversation_id,
-        Group.user_id == current_user.id
-    ).first()
-    
-    if not convo:
-        logger.error(f"Unauthorized access or conversation not found: {conversation_id} for User ID {current_user.id}")
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    
-    convo.is_deleted = True
-    db.commit()
-    logger.info(f"Conversation ID {conversation_id} marked as deleted by User ID {current_user.id}")
-    return {"message": "Conversation deleted"}
+    try:
+        convo = db.query(ChatConversation).join(ChatSession).join(chat_session_group).join(Group).filter(
+            ChatConversation.id == conversation_id,
+            Group.user_id == current_user.id
+        ).first()
+
+        if not convo:
+            logger.error(f"Unauthorized access or conversation not found: {conversation_id} for User ID {current_user.id}")
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        convo.is_deleted = True
+        db.commit()
+        logger.info(f"Conversation ID {conversation_id} marked as deleted by User ID {current_user.id}")
+        return {"message": "Conversation deleted"}
+    except Exception as e:
+        logger.exception(f"Error deleting conversation ID {conversation_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @chat_router.post("/generate_group_response")
 def generate_group_response(
@@ -204,8 +227,12 @@ def generate_group_response(
     Returns:
         dict: The generated response from the assistant.
     """
-    if not user_prompt or len(user_prompt.strip()) == 0:
-        raise HTTPException(status_code=400, detail="User prompt cannot be empty")
-    
-    logger.info(f"Generating response for Conversation ID {conversation_id} with prompt: {user_prompt[:50]}... by User ID {current_user.id}")
-    return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
+    try:
+        if not user_prompt or len(user_prompt.strip()) == 0:
+            raise HTTPException(status_code=400, detail="User prompt cannot be empty")
+
+        logger.info(f"Generating response for Conversation ID {conversation_id} with prompt: {user_prompt[:50]}... by User ID {current_user.id}")
+        return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
+    except Exception as e:
+        logger.exception(f"Error generating response for Conversation ID {conversation_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

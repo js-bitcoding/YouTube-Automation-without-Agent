@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from database.models import Project
 from utils.logging_utils import logger
+from sqlalchemy.exc import SQLAlchemyError
 
 def create_project(db: Session, name: str, user_id: int):
     """
@@ -16,22 +17,28 @@ def create_project(db: Session, name: str, user_id: int):
         Project: The newly created project.
     """
 
-    existing = db.query(Project).filter(
-    Project.name == name.strip(),
-    Project.user_id == user_id,
-    Project.is_deleted == False
-    ).first()
+    try:
+        existing = db.query(Project).filter(
+            Project.name == name.strip(),
+            Project.user_id == user_id,
+            Project.is_deleted == False
+        ).first()
 
-    if existing:
-        logger.warning(f"User {user_id} tried to create a duplicate project name: {name}")
-        raise HTTPException(status_code=400, detail="Project with this name already exists.")
+        if existing:
+            logger.warning(f"User {user_id} tried to create a duplicate project name: {name}")
+            raise HTTPException(status_code=400, detail="Project with this name already exists.")
 
-    project = Project(name=name, user_id=user_id)
-    db.add(project)
-    db.commit()
-    db.refresh(project)
-    return project
+        project = Project(name=name, user_id=user_id)
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        return project
 
+    except SQLAlchemyError as e:
+        logger.error(f"Error creating project: {str(e)}")
+        db.rollback()  # Rollback the transaction in case of error
+        raise HTTPException(status_code=500, detail="Failed to create project. Database error.")
+    
 def update_project(db: Session, project_id: int, name: str, user_id: int):
     """
     Updates the name of an existing project for a specific user.
@@ -48,20 +55,27 @@ def update_project(db: Session, project_id: int, name: str, user_id: int):
     Raises:
         HTTPException: If the project is not found or the user doesn't have access.
     """
-    project = db.query(Project).filter(
-        Project.id == project_id, 
-        Project.user_id == user_id,
-        Project.is_deleted == False
+    try:
+        project = db.query(Project).filter(
+            Project.id == project_id, 
+            Project.user_id == user_id,
+            Project.is_deleted == False
         ).first()
 
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
 
-    project.name = name
-    db.commit()
-    db.refresh(project)
-    
-    return project
+        project.name = name
+        db.commit()
+        db.refresh(project)
+
+        return project
+
+    except SQLAlchemyError as e:
+        logger.error(f"Error updating project {project_id}: {str(e)}")
+        db.rollback()  # Rollback the transaction in case of error
+        raise HTTPException(status_code=500, detail="Failed to update project. Database error.")
+
 
 def delete_project(db: Session, project_id: int, user_id: int):
     """
@@ -78,26 +92,27 @@ def delete_project(db: Session, project_id: int, user_id: int):
     Raises:
         HTTPException: If the project is not found.
     """
-    logger.info(f"inside the project delete function")
-    project = db.query(Project).filter(
-        Project.id == project_id, 
-        Project.user_id == user_id,
-        Project.is_deleted == False
+    logger.info(f"Inside the project delete function")
+    try:
+        project = db.query(Project).filter(
+            Project.id == project_id, 
+            Project.user_id == user_id,
+            Project.is_deleted == False
         ).first()
-    logger.info(f"project is ::: {project}")
-    
-    if project:
-        try:
-            project.is_deleted = True
-            db.commit()
-            logger.info(f"Project {project_id} deleted successfully.")
-            return {"message": f"Project {project_id} deleted successfully."}
-        except Exception as e:
-            db.rollback()
-            logger.info(f"Error deleting project {project_id}: {e}")
-            return {"error": "Failed to delete project"}
-    else:
-        raise HTTPException(status_code=404, detail="Project not found")
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+        project.is_deleted = True
+        db.commit()
+
+        logger.info(f"Project {project_id} deleted successfully.")
+        return {"message": f"Project {project_id} deleted successfully."}
+
+    except SQLAlchemyError as e:
+        logger.error(f"Error deleting project {project_id}: {str(e)}")
+        db.rollback()  # Rollback the transaction in case of error
+        raise HTTPException(status_code=500, detail="Failed to delete project. Database error.")
 
 def list_projects(db: Session, user_id: int):
     """
@@ -110,7 +125,17 @@ def list_projects(db: Session, user_id: int):
     Returns:
         list: A list of projects associated with the user that are not deleted.
     """
-    return db.query(Project).filter(
-        Project.user_id == user_id,
-        Project.is_deleted == False
-    ).all()
+    try:
+        projects = db.query(Project).filter(
+            Project.user_id == user_id,
+            Project.is_deleted == False
+        ).all()
+
+        if not projects:
+            raise HTTPException(status_code=404, detail="No projects found for this user.")
+
+        return projects
+
+    except SQLAlchemyError as e:
+        logger.error(f"Error fetching projects for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch projects. Database error.")

@@ -33,30 +33,39 @@ def fetch_video_thumbnails(keyword: str) -> List[Dict[str, str]]:
     Returns:
         list: A list of dictionaries containing video ID, title, and thumbnail URL for each video found.
     """
-    params = {
-        "part": "snippet",
-        "q": keyword,
-        "maxResults": 10,
-        "type": "video",
-        "key": YOUTUBE_API_KEY
-    }
-    
-    response = requests.get(YOUTUBE_SEARCH_URL, params=params).json()
-    logger.info("YouTube API Response:", response)
-    videos = []
-    
-    for item in response.get("items", []):
-        video_id = item["id"]["videoId"]
-        snippet = item["snippet"]
+    try:
+        params = {
+            "part": "snippet",
+            "q": keyword,
+            "maxResults": 10,
+            "type": "video",
+            "key": YOUTUBE_API_KEY
+        }
         
-        if "shorts" not in snippet["title"].lower():
-            videos.append({
-                "video_id": video_id,
-                "title": snippet["title"],
-                "thumbnail_url": snippet["thumbnails"]["high"]["url"]
-            })
-    
-    return videos
+        response = requests.get(YOUTUBE_SEARCH_URL, params=params)
+        response.raise_for_status()  # Raise HTTPError for bad responses
+        response_data = response.json()
+        logger.info("YouTube API Response:", response_data)
+        
+        videos = []
+        for item in response_data.get("items", []):
+            video_id = item["id"]["videoId"]
+            snippet = item["snippet"]
+            
+            if "shorts" not in snippet["title"].lower():
+                videos.append({
+                    "video_id": video_id,
+                    "title": snippet["title"],
+                    "thumbnail_url": snippet["thumbnails"]["high"]["url"]
+                })
+        
+        return videos
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"An unexpected error occurred: {e}")
+        return []
 
 def get_published_after(filter_option: str) -> Optional[str]:
     """
@@ -69,21 +78,25 @@ def get_published_after(filter_option: str) -> Optional[str]:
         str: An ISO 8601 datetime string representing the start of the specified period (e.g., '2025-04-25T00:00:00Z').
              Returns None if the filter option is invalid.
     """
-    now = datetime.utcnow()
+    try:
+        now = datetime.utcnow()
 
-    if filter_option == "today":
-        return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
-    elif filter_option == "this week":
-        start_of_week = now - timedelta(days=now.weekday())
-        return start_of_week.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
-    elif filter_option == "this month":
-        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        return start_of_month.isoformat() + "Z"
-    elif filter_option == "this year":
-        start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        return start_of_year.isoformat() + "Z"
-    
-    return None 
+        if filter_option == "today":
+            return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
+        elif filter_option == "this week":
+            start_of_week = now - timedelta(days=now.weekday())
+            return start_of_week.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
+        elif filter_option == "this month":
+            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            return start_of_month.isoformat() + "Z"
+        elif filter_option == "this year":
+            start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            return start_of_year.isoformat() + "Z"
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error in processing filter option: {e}")
+        return None 
 
 def fetch_youtube_videos(query: str, 
     max_results: int = 10, 
@@ -93,117 +106,132 @@ def fetch_youtube_videos(query: str,
     upload_date: Optional[str] = None):
     """Fetch YouTube videos with optional filters, excluding Shorts (videos under 60 seconds)."""
     
-    if not YOUTUBE_API_KEY:
-        raise ValueError("YouTube API Key is missing. Check your .env file.")
+    try:
+        if not YOUTUBE_API_KEY:
+            raise ValueError("YouTube API Key is missing. Check your .env file.")
 
-    search_url = f"{BASE_URL}/search"
-    search_params = {
-        "part": "snippet",
-        "q": query,
-        "type": "video",
-        "maxResults": max_results,
-        "key": YOUTUBE_API_KEY,
-    }
+        search_url = f"{BASE_URL}/search"
+        search_params = {
+            "part": "snippet",
+            "q": query,
+            "type": "video",
+            "maxResults": max_results,
+            "key": YOUTUBE_API_KEY,
+        }
 
-    if upload_date:
-        published_after = get_published_after(upload_date)
-        if published_after:
-            search_params["publishedAfter"] = published_after
-   
-    if duration_category:
-        search_params["videoDuration"] = duration_category  
+        if upload_date:
+            published_after = get_published_after(upload_date)
+            if published_after:
+                search_params["publishedAfter"] = published_after
 
-    search_response = requests.get(search_url, params=search_params).json()
-    videos = []
-    video_ids = []
-    channel_ids = []
+        if duration_category:
+            search_params["videoDuration"] = duration_category  
 
-    for item in search_response.get("items", []):
-        video_id = item["id"]["videoId"]
-        channel_id = item["snippet"]["channelId"]
-        upload_date = item["snippet"]["publishedAt"]
-        title = item["snippet"]["title"]
-        thumbnail_url = item["snippet"]["thumbnails"]["high"]["url"]
+        search_response = requests.get(search_url, params=search_params)
+        search_response.raise_for_status()
+        response_data = search_response.json()
 
-        if "shorts" in title.lower():
-            continue  
+        videos = []
+        video_ids = []
+        channel_ids = []
 
-        videos.append({
-            "video_id": video_id,
-            "title": title,
-            "channel_id": channel_id,
-            "channel_name": item["snippet"]["channelTitle"],
-            "upload_date": upload_date,
-            "thumbnail": thumbnail_url,
-            "video_url": f"https://www.youtube.com/watch?v={video_id}"
-        })
-        video_ids.append(video_id)
-        channel_ids.append(channel_id)
+        for item in response_data.get("items", []):
+            video_id = item["id"]["videoId"]
+            channel_id = item["snippet"]["channelId"]
+            upload_date = item["snippet"]["publishedAt"]
+            title = item["snippet"]["title"]
+            thumbnail_url = item["snippet"]["thumbnails"]["high"]["url"]
 
-    if not video_ids:
-        return []
+            if "shorts" in title.lower():
+                continue  
 
-    stats_url = f"{BASE_URL}/videos"
-    stats_params = {
-        "part": "statistics,contentDetails",
-        "id": ",".join(video_ids),
-        "key": YOUTUBE_API_KEY
-    }
-    stats_response = requests.get(stats_url, params=stats_params).json()
+            videos.append({
+                "video_id": video_id,
+                "title": title,
+                "channel_id": channel_id,
+                "channel_name": item["snippet"]["channelTitle"],
+                "upload_date": upload_date,
+                "thumbnail": thumbnail_url,
+                "video_url": f"https://www.youtube.com/watch?v={video_id}"
+            })
+            video_ids.append(video_id)
+            channel_ids.append(channel_id)
 
-    filtered_videos = []
-    
-    for i, item in enumerate(stats_response.get("items", [])):
-        stats = item.get("statistics", {})
-        duration_str = item.get("contentDetails", {}).get("duration", "PT0S")
-        video_duration = parse_duration_to_seconds(duration_str)  
-        logger.info(f"Video ID: {video_ids[i]} | Duration: {video_duration} seconds")
+        if not video_ids:
+            return []
 
-        if video_duration == 0:
-            continue
-
-        if video_duration < 240: 
-            video_duration_label = "short"
-        elif video_duration <= 1200:  
-            video_duration_label = "medium"
-        else:  
-            video_duration_label = "long"
-
-        if duration_category and duration_category != video_duration_label:
-            continue  
-
-        videos[i]["views"] = int(stats.get("viewCount", 0))
-        videos[i]["likes"] = int(stats.get("likeCount", 0))
-        videos[i]["comments"] = int(stats.get("commentCount", 0))
-        videos[i]["duration"] = video_duration
-        videos[i]["videoDuration"] = video_duration_label  #
-
-        channels_url = f"{BASE_URL}/channels"
-        channels_params = {
-            "part": "statistics",
-            "id": ",".join(set(channel_ids)),
+        stats_url = f"{BASE_URL}/videos"
+        stats_params = {
+            "part": "statistics,contentDetails",
+            "id": ",".join(video_ids),
             "key": YOUTUBE_API_KEY
         }
-        channels_response = requests.get(channels_url, params=channels_params).json()
+        stats_response = requests.get(stats_url, params=stats_params)
+        stats_response.raise_for_status()
+        stats_data = stats_response.json()
 
-        channel_subscribers = {item["id"]: int(item["statistics"].get("subscriberCount", 0)) 
-                               for item in channels_response.get("items", [])}
+        filtered_videos = []
 
-        video = videos[i]
-        video["subscribers"] = channel_subscribers.get(video["channel_id"], 0)
-        video["view_to_subscriber_ratio"] = calculate_view_to_subscriber_ratio(video["views"], video["subscribers"])
-        video["view_velocity"] = calculate_view_velocity(video)
-        video["engagement_rate"] = calculate_engagement_rate(video)
+        for i, item in enumerate(stats_data.get("items", [])):
+            stats = item.get("statistics", {})
+            duration_str = item.get("contentDetails", {}).get("duration", "PT0S")
+            video_duration = parse_duration_to_seconds(duration_str)  
+            logger.info(f"Video ID: {video_ids[i]} | Duration: {video_duration} seconds")
 
-        clicks = video["likes"]
-        impressions = video["views"]
-        video["ctr"] = calculate_ctr(clicks, impressions)
+            if video_duration == 0:
+                continue
 
-        filtered_videos.append(videos[i])
-    
-    filtered_videos.sort(key=lambda x: (x["view_to_subscriber_ratio"], x["view_velocity"], x["engagement_rate"]), reverse=True)
-    store_videos_in_db(filtered_videos)  
-    return filtered_videos
+            if video_duration < 240: 
+                video_duration_label = "short"
+            elif video_duration <= 1200:  
+                video_duration_label = "medium"
+            else:  
+                video_duration_label = "long"
+
+            if duration_category and duration_category != video_duration_label:
+                continue  
+
+            videos[i]["views"] = int(stats.get("viewCount", 0))
+            videos[i]["likes"] = int(stats.get("likeCount", 0))
+            videos[i]["comments"] = int(stats.get("commentCount", 0))
+            videos[i]["duration"] = video_duration
+            videos[i]["videoDuration"] = video_duration_label  
+
+            channels_url = f"{BASE_URL}/channels"
+            channels_params = {
+                "part": "statistics",
+                "id": ",".join(set(channel_ids)),
+                "key": YOUTUBE_API_KEY
+            }
+            channels_response = requests.get(channels_url, params=channels_params)
+            channels_response.raise_for_status()
+            channels_data = channels_response.json()
+
+            channel_subscribers = {item["id"]: int(item["statistics"].get("subscriberCount", 0)) 
+                                for item in channels_data.get("items", [])}
+
+            video = videos[i]
+            video["subscribers"] = channel_subscribers.get(video["channel_id"], 0)
+            video["view_to_subscriber_ratio"] = calculate_view_to_subscriber_ratio(video["views"], video["subscribers"])
+            video["view_velocity"] = calculate_view_velocity(video)
+            video["engagement_rate"] = calculate_engagement_rate(video)
+
+            clicks = video["likes"]
+            impressions = video["views"]
+            video["ctr"] = calculate_ctr(clicks, impressions)
+
+            filtered_videos.append(videos[i])
+
+        filtered_videos.sort(key=lambda x: (x["view_to_subscriber_ratio"], x["view_velocity"], x["engagement_rate"]), reverse=True)
+        store_videos_in_db(filtered_videos)  
+        return filtered_videos
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while fetching videos: {e}")
+        return []
+
 
 def calculate_ctr(clicks: int, impressions: int) -> float:
     """
@@ -217,9 +245,13 @@ def calculate_ctr(clicks: int, impressions: int) -> float:
         float: The CTR as a percentage, rounded to 2 decimal places.
               Returns 0 if impressions are 0.
     """
-    if impressions == 0:
-        return 0  
-    return round((clicks / impressions) * 100, 2)
+    try:
+        if impressions == 0:
+            return 0  
+        return round((clicks / impressions) * 100, 2)
+    except Exception as e:
+        logger.error(f"Error calculating CTR: {e}")
+        return 0
 
 def parse_duration_to_seconds(duration: str) -> int:
     """
@@ -231,20 +263,24 @@ def parse_duration_to_seconds(duration: str) -> int:
     Returns:
         int: Total duration in seconds.
     """ 
-    logger.info(f"Raw Duration String: {duration}")
-    pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
-    match = pattern.match(duration)
-    if not match:
+    try:
+        logger.info(f"Raw Duration String: {duration}")
+        pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+        match = pattern.match(duration)
+        if not match:
+            return 0
+
+        hours = int(match.group(1) or 0)
+        minutes = int(match.group(2) or 0)
+        seconds = int(match.group(3) or 0)
+
+        total_seconds = hours * 3600 + minutes * 60 + seconds 
+        logger.info(f"Parsed Duration (Seconds): {total_seconds}") 
+        
+        return total_seconds
+    except Exception as e:
+        logger.error(f"Error parsing duration: {e}")
         return 0
-
-    hours = int(match.group(1) or 0)
-    minutes = int(match.group(2) or 0)
-    seconds = int(match.group(3) or 0)
-
-    total_seconds = hours * 3600 + minutes * 60 + seconds 
-    logger.info(f"Parsed Duration (Seconds): {total_seconds}") 
-    
-    return total_seconds
 
 def store_videos_in_db(videos: List[Dict[str, Union[str, int, float]]]) -> None:
     """
@@ -253,33 +289,36 @@ def store_videos_in_db(videos: List[Dict[str, Union[str, int, float]]]) -> None:
     Args:
         videos (list): List of video data dictionaries.
     """
-    for video in videos:
-        existing_video = session.query(Video).filter_by(video_id=video["video_id"]).first()
-        if existing_video:
-            continue
-        
-        new_video = Video(
-            video_id=video["video_id"],
-            title=video["title"],
-            channel_id=video["channel_id"],
-            channel_name=video["channel_name"],
-            upload_date=video["upload_date"],
-            thumbnail=video["thumbnail"],
-            video_url=video["video_url"],
-            views=video["views"],
-            likes=video["likes"],
-            comments=video["comments"],
-            subscribers=video["subscribers"],
-            view_to_subscriber_ratio=video["view_to_subscriber_ratio"],
-            view_velocity=video["view_velocity"],
-            engagement_rate=video["engagement_rate"]
-        )
+    try:
+        for video in videos:
+            existing_video = session.query(Video).filter_by(video_id=video["video_id"]).first()
+            if existing_video:
+                continue
 
-        try:
-            session.add(new_video)
-            session.commit()
-        except IntegrityError:
-            session.rollback()
+            new_video = Video(
+                video_id=video["video_id"],
+                title=video["title"],
+                channel_id=video["channel_id"],
+                channel_name=video["channel_name"],
+                upload_date=video["upload_date"],
+                thumbnail=video["thumbnail"],
+                video_url=video["video_url"],
+                views=video["views"],
+                likes=video["likes"],
+                comments=video["comments"],
+                subscribers=video["subscribers"],
+                view_to_subscriber_ratio=video["view_to_subscriber_ratio"],
+                view_velocity=video["view_velocity"],
+                engagement_rate=video["engagement_rate"]
+            )
+
+            try:
+                session.add(new_video)
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+    except Exception as e:
+        logger.error(f"Error storing videos in the database: {e}")
 
 
 def fetch_video_by_id(video_id: str) -> Dict[str, Union[str, int]]:
@@ -295,55 +334,67 @@ def fetch_video_by_id(video_id: str) -> Dict[str, Union[str, int]]:
     Raises:
         ValueError: If API key is missing.
     """
-    if not YOUTUBE_API_KEY:
-        raise ValueError("YouTube API Key is missing. Check your .env file.")
+    try:
+        if not YOUTUBE_API_KEY:
+            raise ValueError("YouTube API Key is missing. Check your .env file.")
 
-    url = f"{BASE_URL}/videos"
-    params = {
-        "part": "snippet,statistics,contentDetails",
-        "id": video_id,
-        "key": YOUTUBE_API_KEY
-    }
+        url = f"{BASE_URL}/videos"
+        params = {
+            "part": "snippet,statistics,contentDetails",
+            "id": video_id,
+            "key": YOUTUBE_API_KEY
+        }
 
-    response = requests.get(url, params=params).json()
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        response_data = response.json()
 
-    if "items" not in response or not response["items"]:
-        return {"error": "Video not found"}
+        if "items" not in response_data or not response_data["items"]:
+            return {"error": "Video not found"}
 
-    item = response["items"][0]
-    
-    stats = item.get("statistics", {})
-    duration_str = item.get("contentDetails", {}).get("duration", "PT0S")
-    video_duration = parse_duration_to_seconds(duration_str)
+        item = response_data["items"][0]
 
-    channel_id = item["snippet"]["channelId"]
-    channel_url = f"{BASE_URL}/channels"
-    channel_params = {
-        "part": "statistics",
-        "id": channel_id,
-        "key": YOUTUBE_API_KEY
-    }
-    
-    channel_response = requests.get(channel_url, params=channel_params).json()
-    subscribers = 0  
+        stats = item.get("statistics", {})
+        duration_str = item.get("contentDetails", {}).get("duration", "PT0S")
+        video_duration = parse_duration_to_seconds(duration_str)
 
-    if "items" in channel_response and channel_response["items"]:
-        subscribers = int(channel_response["items"][0]["statistics"].get("subscriberCount", 0))
+        channel_id = item["snippet"]["channelId"]
+        channel_url = f"{BASE_URL}/channels"
+        channel_params = {
+            "part": "statistics",
+            "id": channel_id,
+            "key": YOUTUBE_API_KEY
+        }
+        
+        channel_response = requests.get(channel_url, params=channel_params)
+        channel_response.raise_for_status()
+        channel_data = channel_response.json()
 
-    video_details = {
-        "video_id": video_id,
-        "title": item["snippet"]["title"],
-        "description": item["snippet"]["description"],
-        "channel_id": channel_id,
-        "channel_name": item["snippet"]["channelTitle"],
-        "upload_date": item["snippet"]["publishedAt"],
-        "thumbnail": item["snippet"]["thumbnails"]["high"]["url"],
-        "video_url": f"https://www.youtube.com/watch?v={video_id}",
-        "views": int(stats.get("viewCount", 0)),
-        "likes": int(stats.get("likeCount", 0)),
-        "comments": int(stats.get("commentCount", 0)),
-        "duration": video_duration,
-        "subscribers": subscribers  
-    }
+        subscribers = 0  
 
-    return video_details
+        if "items" in channel_data and channel_data["items"]:
+            subscribers = int(channel_data["items"][0]["statistics"].get("subscriberCount", 0))
+
+        video_details = {
+            "video_id": video_id,
+            "title": item["snippet"]["title"],
+            "description": item["snippet"]["description"],
+            "channel_id": channel_id,
+            "channel_name": item["snippet"]["channelTitle"],
+            "upload_date": item["snippet"]["publishedAt"],
+            "thumbnail": item["snippet"]["thumbnails"]["high"]["url"],
+            "video_url": f"https://www.youtube.com/watch?v={video_id}",
+            "views": int(stats.get("viewCount", 0)),
+            "likes": int(stats.get("likeCount", 0)),
+            "comments": int(stats.get("commentCount", 0)),
+            "duration": video_duration,
+            "subscribers": subscribers  
+        }
+
+        return video_details
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {e}")
+        return {"error": "Request failed"}
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while fetching video by ID: {e}")
+        return {"error": "An unexpected error occurred"}

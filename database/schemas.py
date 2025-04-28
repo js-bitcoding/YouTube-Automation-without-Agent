@@ -1,6 +1,7 @@
 import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field, EmailStr
+from fastapi import Form,Body
 
 class UserRegister(BaseModel):
     username: str 
@@ -33,6 +34,14 @@ class InstructionBase(BaseModel):
     name: str
     content: str
 
+    @classmethod
+    def as_form(
+            cls,
+            name: str = Form(...),
+            content: str = Body(...)
+        ):
+            return cls(name=name, content=content)
+    
 class InstructionCreate(InstructionBase):
     pass
 

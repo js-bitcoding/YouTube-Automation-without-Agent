@@ -5,14 +5,14 @@ from fastapi.responses import JSONResponse
 from database.models import Instruction,User
 from database.db_connection import get_db
 from functionality.current_user import admin_only
-from database.schemas import InstructionCreate, InstructionOut, InstructionUpdate
+from database.schemas import InstructionBase, InstructionOut, InstructionUpdate
 from utils.logging_utils import logger
-
+from fastapi.responses import JSONResponse
 instruction_router = APIRouter(prefix="/instruction")
 
 @instruction_router.post("/create/", response_model=InstructionOut)
 def create_instruction(
-    instruction: InstructionCreate,
+     instruction: InstructionBase = Depends(InstructionBase.as_form),
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
 ):
@@ -30,18 +30,47 @@ def create_instruction(
     Raises:
         HTTPException: If an instruction with the same name already exists.
     """
-    existing_instruction = db.query(Instruction).filter(Instruction.name == instruction.name).first()
-    if existing_instruction:
-        logger.warning(f"Create failed: Instruction with name '{instruction.name}' already exists.")
-        raise HTTPException(status_code=400, detail=f"Instruction with name '{instruction.name}' already exists.")
-    
-    new_instruction = Instruction(**instruction.dict(), user_id=user.id)
-    db.add(new_instruction)
-    db.commit()
-    db.refresh(new_instruction)
+    try:
+        if instruction.name.strip().lower() == "string" or not instruction.name.strip():
+            raise HTTPException(status_code=400, detail="Instruction Name cannot be empty.")
+            
+        if instruction.content.strip().lower() == "string" or not instruction.content.strip():
+            raise HTTPException(status_code=400, detail="Instruction Content cannot be empty.")
+        
+        existing_instruction = db.query(Instruction).filter(Instruction.name == instruction.name).first()
+        if existing_instruction:
+            logger.warning(f"Create failed: Instruction with name '{instruction.name}' already exists.")
+            raise HTTPException(status_code=400, detail=f"Instruction with name '{instruction.name}' already exists.")
 
-    logger.info(f"Instruction created by user {user.id}: {new_instruction.name}")
-    return new_instruction
+        new_instruction = Instruction(**instruction.dict(), user_id=user.id)
+        db.add(new_instruction)
+        db.commit()
+        db.refresh(new_instruction)
+
+        logger.info(f"Instruction created by user {user.id}: {new_instruction.name}")
+        
+        return JSONResponse(
+            status_code=201,
+            content={
+                "message": "Instruction created successfully.",
+                "instruction": {
+                    "id": new_instruction.id,
+                    "name": new_instruction.name,
+                    "content": new_instruction.content,
+                    "is_activate": new_instruction.is_activate,
+                    "created_at": new_instruction.created_at.isoformat(),
+                    "updated_at": new_instruction.updated_at.isoformat(),
+                }
+            }
+        )
+
+    except HTTPException as e:
+        logger.error(f"Error: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
 @instruction_router.put("/update/{instruction_id}/", response_model=InstructionOut)
 def update_instruction(
@@ -68,30 +97,56 @@ def update_instruction(
             - If the user is unauthorized to update the instruction.
             - If attempting to update the 'user_id' field directly.
     """
-    instruction = db.query(Instruction).filter(
-        Instruction.id == instruction_id, 
-        Instruction.is_deleted == False
+    try:
+        instruction = db.query(Instruction).filter(
+            Instruction.id == instruction_id, 
+            Instruction.is_deleted == False
         ).first()
 
-    if not instruction:
-        logger.warning(f"Update failed: Instruction {instruction_id} not found.")
-        raise HTTPException(status_code=404, detail="Instruction not found")
+        if not instruction:
+            logger.warning(f"Update failed: Instruction {instruction_id} not found.")
+            raise HTTPException(status_code=404, detail="Instruction not found")
 
-    if instruction.user_id != user.id:
-        logger.warning(f"Unauthorized update attempt by user {user.id} on instruction {instruction_id}")
-        raise HTTPException(status_code=403, detail="You can only update your own instructions")
+        if instruction.user_id != user.id:
+            logger.warning(f"Unauthorized update attempt by user {user.id} on instruction {instruction_id}")
+            raise HTTPException(status_code=403, detail="You can only update your own instructions")
 
-    if "user_id" in update_data.dict():
-        logger.error("User attempted to modify user_id field.")
-        raise HTTPException(status_code=400, detail="Cannot update user_id directly")
+        if "user_id" in update_data.dict():
+            logger.error("User attempted to modify user_id field.")
+            raise HTTPException(status_code=400, detail="Cannot update user_id directly")
 
-    for key, value in update_data.dict(exclude_unset=True).items():
-        setattr(instruction, key, value)
+        for key, value in update_data.dict(exclude_unset=True).items():
+            setattr(instruction, key, value)
 
-    db.commit()
-    db.refresh(instruction)
-    logger.info(f"Instruction {instruction_id} updated by user {user.id}")
-    return instruction
+        db.commit()
+        db.refresh(instruction)
+
+        logger.info(f"Instruction {instruction_id} updated by user {user.id}")
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "Instruction updated successfully.",
+                "instruction": {
+                    "id": instruction.id,
+                    "name": instruction.name,
+                    "content": instruction.content,
+                    "is_activate": instruction.is_activate,
+                    "created_at": instruction.created_at.isoformat(),
+                    "updated_at": instruction.updated_at.isoformat(),
+                }
+            }
+        )
+
+    except HTTPException as e:
+        logger.error(f"Error: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+
+
 
 @instruction_router.delete("/delete/{instruction_id}/")
 def delete_instruction(
@@ -115,20 +170,30 @@ def delete_instruction(
             - If the instruction is not found.
             - If the user is unauthorized to delete the instruction.
     """
-    instruction = db.query(Instruction).filter(Instruction.id == instruction_id).first()
+    try:
+        instruction = db.query(Instruction).filter(Instruction.id == instruction_id).first()
 
-    if not instruction:
-        logger.warning(f"Delete failed: Instruction {instruction_id} not found.")
-        raise HTTPException(status_code=404, detail="Instruction not found")
+        if not instruction:
+            logger.warning(f"Delete failed: Instruction {instruction_id} not found.")
+            raise HTTPException(status_code=404, detail="Instruction not found")
 
-    if instruction.user_id != user.id:
-        logger.warning(f"Unauthorized delete attempt by user {user.id} on instruction {instruction_id}")
-        raise HTTPException(status_code=403, detail="You can only delete your own instructions")
+        if instruction.user_id != user.id:
+            logger.warning(f"Unauthorized delete attempt by user {user.id} on instruction {instruction_id}")
+            raise HTTPException(status_code=403, detail="You can only delete your own instructions")
 
-    instruction.is_deleted = True
-    db.commit()
-    logger.info(f"Instruction {instruction_id} marked as deleted by user {user.id}")
-    return {"detail": "Instruction deleted"}
+        instruction.is_deleted = True
+        db.commit()
+
+        logger.info(f"Instruction {instruction_id} marked as deleted by user {user.id}")
+        return JSONResponse(status_code=200, content={"message": "Instruction deleted successfully."})
+
+    except HTTPException as e:
+        logger.error(f"Error: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
 @instruction_router.get("/get/", response_model=List[InstructionOut])
 def get_my_instructions(
@@ -149,17 +214,26 @@ def get_my_instructions(
         HTTPException:
             - If no instructions are found for the user.
     """
-    instructions = db.query(Instruction).filter(
-        Instruction.user_id == user.id, 
-        Instruction.is_deleted == False
+    try:
+        instructions = db.query(Instruction).filter(
+            Instruction.user_id == user.id, 
+            Instruction.is_deleted == False
         ).all()
-    
-    if not instructions:
-        logger.info(f"No instructions found for user {user.id}")
-        raise HTTPException(status_code=404, detail="No instructions found for this user")
 
-    logger.info(f"Instructions retrieved for user {user.id}")
-    return instructions
+        if not instructions:
+            logger.info(f"No instructions found for user {user.id}")
+            raise HTTPException(status_code=404, detail="No instructions found for this user")
+
+        logger.info(f"Instructions retrieved for user {user.id}")
+        return instructions
+
+    except HTTPException as e:
+        logger.error(f"Error: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
 @instruction_router.get("/get/{instruction_id}/", response_model=InstructionOut)
 def get_instruction_by_id(
@@ -182,18 +256,27 @@ def get_instruction_by_id(
         HTTPException:
             - If the instruction with the specified ID is not found or not owned by the user.
     """
-    instruction = db.query(Instruction).filter(
-        Instruction.id == instruction_id,
-        Instruction.user_id == user.id,
-        Instruction.is_deleted == False
-    ).first()
+    try:
+        instruction = db.query(Instruction).filter(
+            Instruction.id == instruction_id,
+            Instruction.user_id == user.id,
+            Instruction.is_deleted == False
+        ).first()
 
-    if not instruction:
-        logger.info(f"Instruction with ID {instruction_id} not found for user {user.id}")
-        raise HTTPException(status_code=404, detail="Instruction not found for this user")
+        if not instruction:
+            logger.info(f"Instruction with ID {instruction_id} not found for user {user.id}")
+            raise HTTPException(status_code=404, detail="Instruction not found for this user")
 
-    logger.info(f"Instruction with ID {instruction_id} retrieved for user {user.id}")
-    return instruction
+        logger.info(f"Instruction with ID {instruction_id} retrieved for user {user.id}")
+        return instruction
+
+    except HTTPException as e:
+        logger.error(f"Error: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
 @instruction_router.put("/activate/{instruction_id}/", response_model=InstructionOut)
 def activate_instruction(
@@ -217,44 +300,54 @@ def activate_instruction(
             - If the instruction with the specified ID is not found.
             - If the instruction is not owned by the user.
     """
-    instruction = db.query(Instruction).filter(
-        Instruction.id == instruction_id, 
-        Instruction.is_deleted == False
+    try:
+        instruction = db.query(Instruction).filter(
+            Instruction.id == instruction_id, 
+            Instruction.is_deleted == False
         ).first()
 
-    if not instruction:
-        logger.warning(f"Activation failed: Instruction {instruction_id} not found.")
-        raise HTTPException(status_code=404, detail="Instruction not found")
+        if not instruction:
+            logger.warning(f"Activation failed: Instruction {instruction_id} not found.")
+            raise HTTPException(status_code=404, detail="Instruction not found")
 
-    if instruction.user_id != user.id:
-        logger.warning(f"Unauthorized activation attempt by user {user.id} on instruction {instruction_id}")
-        raise HTTPException(status_code=403, detail="You can only activate your own instructions")
+        if instruction.user_id != user.id:
+            logger.warning(f"Unauthorized activation attempt by user {user.id} on instruction {instruction_id}")
+            raise HTTPException(status_code=403, detail="You can only activate your own instructions")
 
-    previously_active_instructions = db.query(Instruction).filter(
-        Instruction.user_id == user.id,
-        Instruction.is_activate == True,
-        Instruction.id != instruction_id
-    ).all()
+        previously_active_instructions = db.query(Instruction).filter(
+            Instruction.user_id == user.id,
+            Instruction.is_activate == True,
+            Instruction.id != instruction_id
+        ).all()
 
-    deactivated_names = [i.name for i in previously_active_instructions]
+        deactivated_names = [i.name for i in previously_active_instructions]
 
-    for inst in previously_active_instructions:
-        inst.is_activate = False
+        for inst in previously_active_instructions:
+            inst.is_activate = False
 
-    instruction.is_activate = True
-    db.commit()
-    db.refresh(instruction)
+        instruction.is_activate = True
+        db.commit()
+        db.refresh(instruction)
 
-    logger.info(f"Instruction {instruction_id} activated by user {user.id}. Deactivated: {deactivated_names}")
-    return JSONResponse(content={
-        "message": f"Instruction '{instruction.name}' is now activated.",
-        "deactivated_instructions": deactivated_names,
-        "active_instruction": {
-            "id": instruction.id,
-            "name": instruction.name,
-            "content": instruction.content,
-            "is_activate": instruction.is_activate,
-            "created_at": str(instruction.created_at),
-            "updated_at": str(instruction.updated_at),
-        }
-    })
+        logger.info(f"Instruction {instruction_id} activated by user {user.id}. Deactivated: {deactivated_names}")
+        
+        return JSONResponse(content={
+            "message": f"Instruction '{instruction.name}' is now activated.",
+            "deactivated_instructions": deactivated_names,
+            "active_instruction": {
+                "id": instruction.id,
+                "name": instruction.name,
+                "content": instruction.content,
+                "is_activate": instruction.is_activate,
+                "created_at": str(instruction.created_at),
+                "updated_at": str(instruction.updated_at),
+            }
+        })
+
+    except HTTPException as e:
+        logger.error(f"Error: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})

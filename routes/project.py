@@ -29,17 +29,33 @@ def create_project_api(
         HTTPException:
             - If the project name is empty or invalid.
     """
-    logger.info(f"User {user.id} requested create for new project")
+    try:
+        # Check if the project already exists
+        existing_project = db.query(Project).filter(Project.name == name.strip(), Project.user_id == user.id).first()
 
-    if not isinstance(name, str):
-        logger.error(f"User {user.id} tried to create a project with an invalid name: {name}")
-        raise HTTPException(status_code=422, detail="Project name cannot be empty.")
+        if existing_project:
+            logger.warning(f"User {user.id} attempted to create a project with an existing name: {name}")
+            raise HTTPException(status_code=400, detail=f"A project with the name '{name.strip()}' already exists.")
+        
+        # Check if the name is valid
+        if not isinstance(name, str) or name.strip() == "":
+            logger.error(f"User {user.id} provided an invalid project name: {name}")
+            raise HTTPException(status_code=400, detail="Project name cannot be empty or invalid.")
+        
+        # Call service layer to handle project creation
+        created_project = create_project(db=db, name=name.strip(), user_id=user.id)
+        logger.info(f"User {user.id} created project: {created_project.name}")
+        return created_project
+
+    except HTTPException as e:
+        # This will handle the specific HTTPException raised for duplicate project names or invalid input
+        logger.error(f"HTTPException occurred while creating project for user {user.id}: {e.detail}")
+        raise e  # Re-raise the same exception so it can be handled by FastAPI
     
-    if name.strip().lower() == "string" or not name.strip():
-        logger.error(f"User {user.id} submitted an invalid project name: {name}")
-        raise HTTPException(status_code=400, detail="Project name cannot be empty")
-
-    return create_project(db=db, name=name.strip(), user_id=user.id)
+    except Exception as e:
+        # This will handle any unexpected errors
+        logger.exception(f"Unexpected error while creating project for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to create project.")
 
 @project_router.put("/{project_id}/")
 def update_project_api(
@@ -65,22 +81,29 @@ def update_project_api(
             - If the project name is empty or invalid.
             - If the project does not exist or is not found.
     """
-    logger.info(f"User {user.id} requested update for project {project_id}")
+    logger.info(f"User {user.id} requested to update project {project_id}")
 
-    if not isinstance(project_name, str):
-        logger.error(f"User {user.id} tried to update project {project_id} with an invalid name: {name}")
-        raise HTTPException(status_code=400, detail="Project name cannot be empty.")
+    try:
+        if not isinstance(project_name, str) or project_name.strip() == "":
+            logger.error(f"User {user.id} provided an invalid project name: {project_name}")
+            raise HTTPException(status_code=400, detail="Project name cannot be empty or invalid.")
+        
+        updated_project = update_project(db, project_id, project_name, user_id=user.id)
+        
+        if not updated_project:
+            logger.warning(f"User {user.id} tried to update a non-existing or unauthorized project {project_id}")
+            raise HTTPException(status_code=404, detail="Project not found or unauthorized access.")
+        
+        logger.info(f"User {user.id} successfully updated project {project_id}")
+        return updated_project
 
-    if project_name.strip().lower() == "string" or not project_name.strip():
-        logger.error(f"User {user.id} submitted an invalid project name: {project_name}")
-        raise HTTPException(status_code=400, detail="Project name cannot be empty")
-    
-    updated_project = update_project(db, project_id, project_name, user_id=user.id)
-    if not updated_project:
-        logger.error(f"User {user.id} tried to update a non-existing project: {project_id}")
-        raise HTTPException(status_code=404, detail="Project not found.")
-
-    return updated_project
+    except HTTPException as e:
+        
+        raise e
+    except Exception as e:
+        
+        logger.exception(f"Error while updating project {project_id} for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to update project.")
 
 @project_router.delete("/{project_id}/")
 def delete_project_api(
@@ -103,8 +126,22 @@ def delete_project_api(
         HTTPException:
             - If the project does not exist or the user is not authorized to delete the project.
     """
-    logger.info(f"User {user.id} requested delete for project {project_id}")
-    return delete_project(db, project_id, user_id=user.id)
+    logger.info(f"User {user.id} requested to delete project {project_id}")
+
+    try:
+        result = delete_project(db, project_id, user_id=user.id)
+        
+        if not result:
+            logger.warning(f"User {user.id} attempted to delete a non-existing or unauthorized project {project_id}")
+            raise HTTPException(status_code=404, detail="Project not found or unauthorized access.")
+        
+        logger.info(f"Project {project_id} successfully deleted by user {user.id}")
+        return {"message": f"Project {project_id} successfully deleted."}
+
+    except Exception as e:
+        logger.exception(f"Error while deleting project {project_id} for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to delete project.")
+
 
 @project_router.get("/list/")
 def list_projects_api(
@@ -125,26 +162,29 @@ def list_projects_api(
         HTTPException:
             - If no projects are found for the user.
     """
-    projects = db.query(Project).filter(
-        Project.user_id == user.id,
-        Project.is_deleted == False
-    ).all()
+    logger.info(f"User {user.id} requested to list projects.")
 
-    if not projects:
-        logger.info(f"No projects found for user {user.id}")
-        raise HTTPException(status_code=404, detail="No projects found for this user.")
+    try:
+        projects = db.query(Project).filter(
+            Project.user_id == user.id,
+            Project.is_deleted == False
+        ).all()
 
-    logger.info(f"{len(projects)} project(s) retrieved for user {user.id}")
-    return {
-        "projects": [
-            {
-                "id": project.id,
-                "name": project.name,
-                "created_time": project.created_time
-            }
-            for project in projects
-        ]
-    }
+        if not projects:
+            logger.warning(f"No projects found for user {user.id}")
+            raise HTTPException(status_code=404, detail="No projects found for this user.")
+
+        logger.info(f"{len(projects)} projects found for user {user.id}")
+        return {
+            "projects": [
+                {"id": project.id, "name": project.name, "created_time": project.created_time}
+                for project in projects
+            ]
+        }
+    except Exception as e:
+        logger.exception(f"Error while listing projects for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to list projects.")
+
 
 @project_router.get("/get/{project_id}/")
 def get_project_by_id(
@@ -167,19 +207,26 @@ def get_project_by_id(
         HTTPException:
             - If the project is not found or is deleted.
     """
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == user.id,
-        Project.is_deleted == False
-    ).first()
+    logger.info(f"User {user.id} requested to retrieve project {project_id}.")
 
-    if not project:
-        logger.info(f"Project with ID {project_id} not found for user {user.id}")
-        raise HTTPException(status_code=404, detail="Project not found.")
+    try:
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == user.id,
+            Project.is_deleted == False
+        ).first()
 
-    logger.info(f"Project with ID {project_id} retrieved for user {user.id}")
-    return {
-        "id": project.id,
-        "name": project.name,
-        "created_time": project.created_time
-    }
+        if not project:
+            logger.warning(f"Project {project_id} not found for user {user.id}")
+            raise HTTPException(status_code=404, detail="Project not found.")
+
+        logger.info(f"Project {project_id} retrieved for user {user.id}")
+        return {
+            "id": project.id,
+            "name": project.name,
+            "created_time": project.created_time
+        }
+
+    except Exception as e:
+        logger.exception(f"Error while retrieving project {project_id} for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to retrieve project.")

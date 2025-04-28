@@ -1,15 +1,17 @@
 from datetime import datetime
+from fastapi import status
 from sqlalchemy.orm import Session
+from utils.logging_utils import logger
 from fastapi.security import HTTPBearer
 from passlib.context import CryptContext
-from fastapi import APIRouter, Depends, HTTPException
 from database.db_connection import get_db
+from sqlalchemy.exc import SQLAlchemyError
 from fastapi.responses import JSONResponse
 from database.models import User,UserLoginHistory
 from database.schemas import UserLogin,UserRegister
 from functionality.jwt_token import create_jwt_token
+from fastapi import APIRouter, Depends, HTTPException
 from functionality.current_user import get_current_user
-from utils.logging_utils import logger
 
 router = APIRouter()
 security = HTTPBearer()
@@ -35,42 +37,43 @@ def signup(user_data: UserRegister, db: Session = Depends(get_db)):
     Returns:
         JSONResponse: A message indicating whether the registration was successful or not.
     """
-    if db.query(User).filter(User.email_id == user_data.email_id, User.is_deleted == False).first():
-        logger.warning(f"Signup failed for email {user_data.email_id}: Email already registered.")
-        raise HTTPException(status_code=400, detail="❌ Email already in use. Please use a different one.")
+    try:
+        if db.query(User).filter(User.email_id == user_data.email_id, User.is_deleted == False).first():
+            logger.warning(f"Signup failed: Email {user_data.email_id} already in use.")
+            raise HTTPException(status_code=400, detail="❌ Email already in use.")
 
-    if user_data.username.strip().lower() == "string" or not user_data.username.strip():
-        logger.warning(f"Signup failed for username {user_data.username}: Username cannot be empty.")
-        raise HTTPException(status_code=400, detail="Username cannot be empty you need to provide.")
-    
-    if user_data.password.strip().lower() == "string" or not user_data.password.strip():
-        logger.warning(f"Signup failed for username {user_data.username}: Password cannot be empty.")
-        raise HTTPException(status_code=400, detail="Password cannot be empty you need to provide.")
-    
-    existing_user = db.query(User).filter(
-        User.username == user_data.username,
-        User.is_deleted == False
-        ).first()
-    
-    if existing_user:
-        logger.warning(f"Signup failed for username {user_data.username}: User already exists.")
-        raise HTTPException(status_code=400, detail="❌ User already exists. Please try with different Names")
+        if user_data.username.strip().lower() == "string" or not user_data.username.strip():
+            raise HTTPException(status_code=400, detail="Username cannot be empty.")
 
-    hashed_password = pwd_context.hash(user_data.password)
-    new_user = User(
-        username=user_data.username, 
-        password=hashed_password,
-        email_id=user_data.email_id,
-        role="user"
+        if user_data.password.strip().lower() == "string" or not user_data.password.strip():
+            raise HTTPException(status_code=400, detail="Password cannot be empty.")
+
+        if db.query(User).filter(User.username == user_data.username, User.is_deleted == False).first():
+            logger.warning(f"Signup failed: Username {user_data.username} already exists.")
+            raise HTTPException(status_code=400, detail="❌ Username already taken.")
+
+        hashed_password = pwd_context.hash(user_data.password)
+
+        new_user = User(
+            username=user_data.username,
+            password=hashed_password,
+            email_id=user_data.email_id,
+            role="user"
         )
-    
-    db.add(new_user)
-    db.commit()
+        db.add(new_user)
+        db.commit()
 
-    logger.info(f"User {user_data.username} registered successfully")
-    return JSONResponse(status_code=201,
-        content={"message": f"✅ Registered successfully as ! Now you can login"}
-    )
+        logger.info(f"User {user_data.username} registered successfully.")
+        return JSONResponse(status_code=201, content={"message": "✅ Registered successfully! Now you can login."})
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.exception("Signup failed due to DB error.")
+        raise HTTPException(status_code=500, detail="⚠️ Registration failed due to a server error.")
+    except Exception as e:
+        logger.exception("Unexpected error during signup.")
+        raise HTTPException(status_code=500, detail="Unexpected error during registration.")
+
 
 @router.post("/login")
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
@@ -93,39 +96,36 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     Returns:
         JSONResponse: A response containing the JWT token and a success message.
     """
-    if user_data.username.strip().lower() == "string" or not user_data.username.strip():
-        logger.warning(f"Login failed for username {user_data.username}: Username cannot be empty.")
-        raise HTTPException(status_code=400, detail="Username cannot be empty. You need to provide.")
-    
-    if user_data.password.strip().lower() == "string" or not user_data.password.strip():
-        logger.warning(f"Login failed for username {user_data.username}: Password cannot be empty.")
-        raise HTTPException(status_code=400, detail="Password cannot be empty. You need to provide.")
-    
-    user = db.query(User).filter(
-        User.username == user_data.username
-        ).first()
-    
-    if not user or not pwd_context.verify(user_data.password, user.password):
-        logger.warning(f"Invalid login attempt for username {user_data.username}: Incorrect username or password.")
-        raise HTTPException(status_code=400, detail="❌ Invalid credentials. Your username or password is wrong.")
+    try:
+        if user_data.username.strip().lower() == "string" or not user_data.username.strip():
+            raise HTTPException(status_code=400, detail="Username cannot be empty.")
 
-    login_record = UserLoginHistory(
-        user_id=user.id,
-        login_time=datetime.utcnow(),
-        logout_time=None
-    )
-    db.add(login_record)
+        if user_data.password.strip().lower() == "string" or not user_data.password.strip():
+            raise HTTPException(status_code=400, detail="Password cannot be empty.")
 
-    user.is_active = True
-    db.commit()
-    db.refresh(login_record)
+        user = db.query(User).filter(User.username == user_data.username).first()
+        if not user or not pwd_context.verify(user_data.password, user.password):
+            logger.warning(f"Login failed: Invalid credentials for {user_data.username}.")
+            raise HTTPException(status_code=400, detail="❌ Invalid username or password.")
 
-    token = create_jwt_token({"user_id": user.id})
-    logger.info(f"User {user_data.username} logged in successfully.")
-    return JSONResponse(status_code=201,content= { 
-        "token": token,
-        "message": "You have logged in successfully! Now You Can Explore"
-    })
+        login_record = UserLoginHistory(user_id=user.id, login_time=datetime.utcnow(), logout_time=None)
+        db.add(login_record)
+
+        user.is_active = True
+        db.commit()
+        db.refresh(login_record)
+
+        token = create_jwt_token({"user_id": user.id})
+        logger.info(f"User {user.username} logged in successfully.")
+        return JSONResponse(status_code=201, content={"token": token, "message": "✅ Login successful!"})
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Login failed due to DB error.")
+        raise HTTPException(status_code=500, detail="⚠️ Login failed due to server error.")
+    except Exception:
+        logger.exception("Unexpected error during login.")
+        raise HTTPException(status_code=500, detail="Unexpected error during login.")
+
 
 @router.post("/logout")
 def logout(
@@ -147,26 +147,31 @@ def logout(
     Returns:
         JSONResponse: A success message indicating that the user has logged out.
     """
-    logger.debug(f"Logging out user ID: {current_user.id}")
+    try:
+        logger.debug(f"Attempting logout for user ID: {current_user.id}")
 
-    latest_login = db.query(UserLoginHistory).filter(
-        UserLoginHistory.user_id == current_user.id,
-        UserLoginHistory.logout_time.is_(None)
-    ).order_by(UserLoginHistory.login_time.desc()).first()
+        latest_login = db.query(UserLoginHistory).filter(
+            UserLoginHistory.user_id == current_user.id,
+            UserLoginHistory.logout_time.is_(None)
+        ).order_by(UserLoginHistory.login_time.desc()).first()
 
-    logger.debug(f"Latest login record: {latest_login}")
+        if latest_login:
+            latest_login.logout_time = datetime.utcnow()
+            db.add(latest_login)
 
-    if latest_login:
-        latest_login.logout_time = datetime.utcnow()
-        db.add(latest_login)
-    else:
-        logger.warning(f"No active login record found for user {current_user.username}")
+        current_user.is_active = False
+        db.commit()
 
-    current_user.is_active = False
-    db.commit()
+        logger.info(f"User {current_user.username} logged out successfully.")
+        return JSONResponse(status_code=201, content={"message": "✅ Logout successful!"})
 
-    logger.info(f"User {current_user.username} logged out successfully.")
-    return JSONResponse(status_code=201, content={"message": "Logout successful!"})
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Logout failed due to DB error.")
+        raise HTTPException(status_code=500, detail="⚠️ Logout failed due to a server error.")
+    except Exception:
+        logger.exception("Unexpected error during logout.")
+        raise HTTPException(status_code=500, detail="Unexpected error during logout.")
 
 @router.get("/current_user/")
 def whoami(
@@ -184,10 +189,14 @@ def whoami(
     Returns:
         dict: A dictionary containing the user's id, username, role, and active status.
     """
-    logger.info(f"User {current_user.username} requested their current user details.")
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "role": current_user.role,
-        "is_active": current_user.is_active,
-    }
+    try:
+        logger.info(f"User {current_user.username} requested current user info.")
+        return {
+            "id": current_user.id,
+            "username": current_user.username,
+            "role": current_user.role,
+            "is_active": current_user.is_active,
+        }
+    except Exception:
+        logger.exception("Error fetching current user info.")
+        raise HTTPException(status_code=500, detail="⚠️ Failed to retrieve user details.")

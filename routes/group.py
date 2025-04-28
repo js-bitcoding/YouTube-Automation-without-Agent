@@ -37,41 +37,49 @@ async def create_empty_group(
     Returns:
         dict: Confirmation message and details of the newly created group.
     """
-    if project_id.strip().lower() == "string" or not project_id.strip():
-        raise HTTPException(status_code=400, detail="❌ project_id cannot be empty or 'string'.")
-
     try:
-        project_id = int(project_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="❌ project_id must be a valid integer.")
+        if project_id.strip().lower() == "string" or not project_id.strip():
+            raise HTTPException(status_code=400, detail="❌ project_id cannot be empty or 'string'.")
 
-    if name.strip().lower() == "string" or not name.strip():
-        raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
-    logger.info(f"Creating empty group for project ID {project_id} by user {current_user.id}")
+        try:
+            project_id = int(project_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="❌ project_id must be a valid integer.")
 
-    project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
-    if not project:
-        logger.warning("Project not found.")
-        raise HTTPException(status_code=400, detail="Project not found.")
+        if name.strip().lower() == "string" or not name.strip():
+            raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
 
-    new_group = Group(
-        name=name,
-        user_id=current_user.id,
-        project_id=project_id,
-        created_time=datetime.datetime.now()
-    )
+        logger.info(f"Creating empty group for project ID {project_id} by user {current_user.id}")
 
-    db.add(new_group)
-    db.commit()
-    db.refresh(new_group)
+        project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
+        if not project:
+            logger.warning(f"Project with ID {project_id} not found for user {current_user.id}")
+            raise HTTPException(status_code=400, detail="Project not found.")
 
-    logger.info(f"Group {new_group.id} created successfully")
-    return JSONResponse(content={
-        "message": "Empty group created successfully.",
-        "group_id": new_group.id,
-        "name": new_group.name,
-        "created_time": new_group.created_time.isoformat()
-    })
+        new_group = Group(
+            name=name,
+            user_id=current_user.id,
+            project_id=project_id,
+            created_time=datetime.datetime.now()
+        )
+
+        db.add(new_group)
+        db.commit()
+        db.refresh(new_group)
+
+        logger.info(f"Group {new_group.id} created successfully")
+        return JSONResponse(content={
+            "message": "Empty group created successfully.",
+            "group_id": new_group.id,
+            "name": new_group.name,
+            "created_time": new_group.created_time.isoformat()
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error while creating group for project ID {project_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @group_router.put("/{group_id}/")
 def update_group_api(
@@ -95,19 +103,26 @@ def update_group_api(
     Raises:
         HTTPException: If the user is unauthorized or input is invalid.
     """
-    if group_name.strip().lower() == "string" or not group_name.strip():
-        raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
-    
-    logger.info(f"User {current_user.id} is updating group {group_id} with name '{group_name}'")
-    
-    group = update_group(db, group_id, group_name.strip(), current_user.id)
-    if not group:
-        logger.warning(f"Unauthorized update attempt for group {group_id} by user {current_user.id}")
-        raise HTTPException(status_code=403, detail="You are not authorized to update this group")
-    
-    logger.info(f"Group {group_id} updated successfully by user {current_user.id}")
-    return group
+    try:
+        if group_name.strip().lower() == "string" or not group_name.strip():
+            raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
 
+        logger.info(f"User {current_user.id} is updating group {group_id} with name '{group_name}'")
+
+        group = update_group(db, group_id, group_name.strip(), current_user.id)
+        if not group:
+            logger.warning(f"Unauthorized update attempt for group {group_id} by user {current_user.id}")
+            raise HTTPException(status_code=403, detail="You are not authorized to update this group")
+
+        logger.info(f"Group {group_id} updated successfully by user {current_user.id}")
+        return group
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error while updating group {group_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
 @group_router.put("/update-content")
 async def update_group_content(
     project_id: int = Query(...),
@@ -134,48 +149,55 @@ async def update_group_content(
     Raises:
         HTTPException: If project or group is not found, or if no valid content is provided.
     """
-    logger.info(f"Updating content for group {group_id} under project {project_id} by user {current_user.id}")
-    results = {"documents": [], "videos": []}
-
-    project = db.query(Project).filter(
-        Project.id == project_id, 
-        Project.user_id == current_user.id,
-        Project.is_deleted == False
+    try:
+        logger.info(f"Updating content for group {group_id} under project {project_id} by user {current_user.id}")
+        
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+            Project.is_deleted == False
         ).first()
-    if not project:
-        logger.error("Project not found")
-        raise HTTPException(status_code=400, detail="Project not found.")
+        if not project:
+            logger.error(f"Project {project_id} not found for user {current_user.id}")
+            raise HTTPException(status_code=400, detail="Project not found.")
 
-    group = db.query(Group).filter(
-        Group.id == group_id,
-        Group.project_id == project_id,
-        Group.is_deleted == False
-    ).first()
+        group = db.query(Group).filter(
+            Group.id == group_id,
+            Group.project_id == project_id,
+            Group.is_deleted == False
+        ).first()
+        if not group:
+            logger.warning(f"Group {group_id} not found under project {project_id}")
+            raise HTTPException(status_code=404, detail="Group not found.")
+        
+        if not files and not youtube_links:
+            logger.warning("No files or YouTube links provided in request")
+            raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
-    if not group:
-        logger.warning("Group not found")
-        raise HTTPException(status_code=404, detail="Group not found.")
-    
-    if not files and not youtube_links:
-        logger.warning("No content provided in request")
-        raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
+        # Optional: Basic content validation
+        valid_links = [link.strip() for link in youtube_links if link.strip()]
+        valid_files = [file for file in files or [] if isinstance(file, UploadFile)]
 
-    valid_files = [file for file in files or [] if isinstance(file, UploadFileStar)]
-    valid_links = [link for link in youtube_links or [] if link.strip()]
+        if not valid_files and not valid_links:
+            logger.warning("No valid documents or YouTube links provided")
+            raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
-    if not valid_files and not valid_links:
-        logger.warning("No content provided in request")
-        raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
-    
-    logger.info(f"Creating group content for project {project_id}, group {group_id}, user {current_user.id}")
-    results = await process_group_content(
-        project_id, group_id, files, youtube_links, db, current_user
-    )
+        results = await process_group_content(
+            project_id, group_id, valid_files, valid_links, db, current_user
+        )
 
-    if not results["documents"] and not results["videos"]:
-        raise HTTPException(status_code=400, detail="No valid documents or YouTube links provided.")
+        if not results.get("documents") and not results.get("videos"):
+            logger.warning("Process returned no documents or videos")
+            raise HTTPException(status_code=400, detail="No valid documents or YouTube links provided.")
 
-    return JSONResponse(content=results)
+        logger.info(f"Content updated for group {group_id}: {results}")
+        return JSONResponse(content=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error updating content for group {group_id} under project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @group_router.delete("/delete-content")
 async def delete_group_content(
@@ -206,58 +228,69 @@ async def delete_group_content(
     logger.info(f"Deleting content from group {group_id} by user {current_user.id}")
     results = {"documents_deleted": [], "videos_deleted": [], "errors": []}
 
-    project = db.query(Project).filter(
-        Project.id == project_id, 
-        Project.user_id == current_user.id,
-        Project.is_deleted == False
+    try:
+        project = db.query(Project).filter(
+            Project.id == project_id, 
+            Project.user_id == current_user.id,
+            Project.is_deleted == False
         ).first()
-    if not project:
-        logger.error("Project not found or deleted during delete-content")
-        raise HTTPException(status_code=400, detail="Project not found or has been deleted.")
 
-    group = db.query(Group).filter(
-        Group.id == group_id,
-        Group.project_id == project_id,
-        Group.is_deleted == False
-    ).first()
+        if not project:
+            logger.error(f"Project {project_id} not found or has been deleted for user {current_user.id}")
+            raise HTTPException(status_code=400, detail="Project not found or has been deleted.")
 
-    if not group:
-        logger.warning("Group not found during delete-content")
-        raise HTTPException(status_code=404, detail="Group not found.")
+        group = db.query(Group).filter(
+            Group.id == group_id,
+            Group.project_id == project_id,
+            Group.is_deleted == False
+        ).first()
 
-    if document_ids:
-        documents = (
-            db.query(Document)
-            .filter(Document.id.in_(document_ids), Document.group_id == group_id)
-            .all()
-        )
-        for doc in documents:
-            try:
-                doc.is_deleted = True
-                results["documents_deleted"].append(doc.id)
-            except Exception as e:
-                results["errors"].append(f"Document ID {doc.id}: {str(e)}")
-        db.commit()
+        if not group:
+            logger.warning(f"Group {group_id} not found during delete-content")
+            raise HTTPException(status_code=404, detail="Group not found.")
 
-    if youtube_video_ids:
-        videos = (
-            db.query(YouTubeVideo)
-            .filter(YouTubeVideo.id.in_(youtube_video_ids), YouTubeVideo.group_id == group_id)
-            .all()
-        )
-        for vid in videos:
-            try:
-                vid.is_deleted = True
-                results["videos_deleted"].append(vid.id)
-            except Exception as e:
-                results["errors"].append(f"Video ID {vid.id}: {str(e)}")
-        db.commit()
+        if document_ids:
+            documents = db.query(Document).filter(
+                Document.id.in_(document_ids),
+                Document.group_id == group_id,
+                Document.is_deleted == False
+            ).all()
+            for doc in documents:
+                try:
+                    doc.is_deleted = True
+                    results["documents_deleted"].append(doc.id)
+                except Exception as e:
+                    logger.exception(f"Error deleting document ID {doc.id}: {e}")
+                    results["errors"].append(f"Document ID {doc.id}: {str(e)}")
+            db.commit()
 
-    if not results["documents_deleted"] and not results["videos_deleted"]:
-        raise HTTPException(status_code=400, detail="No valid document or video IDs provided.")
+        if youtube_video_ids:
+            videos = db.query(YouTubeVideo).filter(
+                YouTubeVideo.id.in_(youtube_video_ids),
+                YouTubeVideo.group_id == group_id,
+                YouTubeVideo.is_deleted == False
+            ).all()
+            for vid in videos:
+                try:
+                    vid.is_deleted = True
+                    results["videos_deleted"].append(vid.id)
+                except Exception as e:
+                    logger.exception(f"Error deleting video ID {vid.id}: {e}")
+                    results["errors"].append(f"Video ID {vid.id}: {str(e)}")
+            db.commit()
 
-    logger.info(f"Deleted content result: {results}")
-    return JSONResponse(content=results)
+        if not results["documents_deleted"] and not results["videos_deleted"]:
+            logger.warning("No valid document or video IDs found for deletion")
+            raise HTTPException(status_code=400, detail="No valid document or video IDs provided.")
+
+        logger.info(f"Deleted content result for group {group_id}: {results}")
+        return JSONResponse(content=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error during delete-content: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during content deletion.")
 
 @group_router.delete("/{group_id}/")
 def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -277,13 +310,20 @@ def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user:
     """
     logger.info(f"User {current_user.id} requesting delete for group {group_id}")
 
-    group = delete_group(db, group_id, current_user.id)
-    if not group:
-        logger.warning("group not found ")
-        raise HTTPException(status_code=403, detail="group not found")
-    
-    logger.info(f"Group {group_id} deleted successfully by user {current_user.id}")
-    return {"message": "Group deleted successfully"}
+    try:
+        group = delete_group(db, group_id, current_user.id)
+        if not group:
+            logger.warning(f"Group {group_id} not found or unauthorized deletion attempt by user {current_user.id}")
+            raise HTTPException(status_code=403, detail="Group not found or you are not authorized to delete it.")
+
+        logger.info(f"Group {group_id} deleted successfully by user {current_user.id}")
+        return {"message": "✅ Group deleted successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error deleting group {group_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error while deleting the group.")
 
 @group_router.get("/groups_content/")
 def get_user_groups_with_content_api(
@@ -303,13 +343,23 @@ def get_user_groups_with_content_api(
     Raises:
         HTTPException: If no groups are found for the current user.
     """
-    logger.info(f"Fetching groups with content for user {current_user.id}")
-    content = get_user_groups_with_content(current_user.id, db)
-    if not content:
-        logger.info(f"No groups found for user {current_user.id}")
-        raise HTTPException(status_code=404, detail="No groups found for the current user.")
-    
-    return {"groups": content}
+    logger.info(f"User {current_user.id} is requesting all groups and their content.")
+
+    try:
+        # Fetch the user groups and their content
+        content = get_user_groups_with_content(current_user.id, db)
+
+        # If no content is found, raise an appropriate exception
+        if not content:
+            logger.info(f"No groups found for user {current_user.id}.")
+            raise HTTPException(status_code=404, detail="No groups found for the current user.")
+
+        logger.info(f"Successfully fetched {len(content)} groups with content for user {current_user.id}.")
+        return {"groups": content}
+
+    except Exception as e:
+        logger.exception(f"Error occurred while fetching groups for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")
 
 @group_router.get("/group_content/{group_id}/")
 def get_user_group_with_content_api(
@@ -331,10 +381,20 @@ def get_user_group_with_content_api(
     Raises:
         HTTPException: If the group is not found or the user is not authorized to access it.
     """
-    logger.info(f"Fetching content for group {group_id} for user {current_user.id}")
-    content = get_user_group_with_content_by_id(group_id, current_user.id, db)
-    if not content:
-        logger.warning(f"Group {group_id} not found for user {current_user.id}")
-        raise HTTPException(status_code=404, detail="Group not found or unauthorized access.")
-    
-    return {"group": content}
+    logger.info(f"User {current_user.id} is requesting content for group {group_id}.")
+
+    try:
+        # Fetch the content for the specific group
+        content = get_user_group_with_content_by_id(group_id, current_user.id, db)
+
+        # Check if the content was found and is associated with the current user
+        if not content:
+            logger.warning(f"Group {group_id} not found for user {current_user.id} or unauthorized access.")
+            raise HTTPException(status_code=404, detail="Group not found or unauthorized access.")
+
+        logger.info(f"Successfully retrieved content for group {group_id} for user {current_user.id}.")
+        return {"group": content}
+
+    except Exception as e:
+        logger.exception(f"Error occurred while fetching content for group {group_id} by user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while retrieving the group content.")

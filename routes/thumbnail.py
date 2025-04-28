@@ -36,9 +36,14 @@ def fetch_thumbnails(
     Returns:
         dict: A message and the fetched thumbnail results.
     """
-    results = fetch_thumbnails_preview(keyword)
-    logger.info(f"Fetched thumbnails for preview with keyword '{keyword}' by user {user.id}")
-    return {"message": "Fetched thumbnails for preview.", "results": results}
+    try:
+        results = fetch_thumbnails_preview(keyword)
+        logger.info(f"User {user.id} fetched thumbnails for preview with keyword '{keyword}'")
+        return {"message": "Fetched thumbnails for preview.", "results": results}
+    
+    except Exception as e:
+        logger.exception(f"Failed to fetch thumbnails for keyword '{keyword}' by user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch thumbnails.")
 
 @thumbnail_router.post("/store_selected_thumbnails/")
 def store_selected(
@@ -57,9 +62,13 @@ def store_selected(
     Returns:
         dict: The result of the thumbnail storage process.
     """
-    result = store_thumbnails(video_ids, keyword, current_user)
-    logger.info(f"User {current_user.id} stored selected thumbnails with keyword '{keyword}'")
-    return result
+    try:
+        result = store_thumbnails(video_ids, keyword, current_user)
+        logger.info(f"User {current_user.id} stored selected thumbnails with keyword '{keyword}'")
+        return result
+    except Exception as e:
+        logger.exception(f"Failed to store selected thumbnails for user {current_user.id} with keyword '{keyword}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to store selected thumbnails.")
 
 @thumbnail_router.get("/search/")
 def search_thumbnails(
@@ -84,44 +93,49 @@ def search_thumbnails(
     Returns:
         dict: List of thumbnails matching the search criteria.
     """
-    query = db.query(Thumbnail).filter(Thumbnail.user_id == user.id)
+    try:
+        query = db.query(Thumbnail).filter(Thumbnail.user_id == user.id)
 
-    if keyword:
-        query = query.filter(Thumbnail.keyword == keyword)
+        if keyword:
+            query = query.filter(Thumbnail.keyword == keyword)
 
-    if text:
-        query = query.filter(Thumbnail.text_detection.ilike(f"%{text}%"))
+        if text:
+            query = query.filter(Thumbnail.text_detection.ilike(f"%{text}%"))
 
-    if emotion:
-        query = query.filter(Thumbnail.emotion == emotion)
+        if emotion:
+            query = query.filter(Thumbnail.emotion == emotion)
 
-    if min_faces is not None:
-        query = query.filter(Thumbnail.face_detection >= min_faces)
+        if min_faces is not None:
+            query = query.filter(Thumbnail.face_detection >= min_faces)
 
-    thumbnails = query.all()
+        thumbnails = query.all()
 
-    if not thumbnails:
-        logger.warning(f"No matching thumbnails found for user {user.id} with keyword '{keyword}'")
-        raise HTTPException(status_code=404, detail="No matching thumbnails found.")
-    
-    logger.info(f"User {user.id} retrieved {len(thumbnails)} matching thumbnails.")
-    return {
-        "keyword": keyword,
-        "total": len(thumbnails),
-        "thumbnails": [
-            {
-                "id": t.id,
-                "video_id": t.video_id,
-                "title": t.title,
-                "url": t.url,
-                "text_detection": t.text_detection,
-                "face_detection": t.face_detection,
-                "emotion": t.emotion,
-                "color_palette": json.loads(t.color_palette) if t.color_palette else [],
-            }
-            for t in thumbnails
-        ]
-    }
+        if not thumbnails:
+            logger.warning(f"No matching thumbnails found for user {user.id} with keyword '{keyword}'")
+            raise HTTPException(status_code=404, detail="No matching thumbnails found.")
+        
+        logger.info(f"User {user.id} retrieved {len(thumbnails)} matching thumbnails.")
+        return {
+            "keyword": keyword,
+            "total": len(thumbnails),
+            "thumbnails": [
+                {
+                    "id": t.id,
+                    "video_id": t.video_id,
+                    "title": t.title,
+                    "url": t.url,
+                    "text_detection": t.text_detection,
+                    "face_detection": t.face_detection,
+                    "emotion": t.emotion,
+                    "color_palette": json.loads(t.color_palette) if t.color_palette else [],
+                }
+                for t in thumbnails
+            ]
+        }
+
+    except Exception as e:
+        logger.exception(f"Failed to search for thumbnails for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to search for thumbnails.")
 
 @thumbnail_router.post("/validate/")
 def validate_thumbnail_api(
@@ -140,18 +154,23 @@ def validate_thumbnail_api(
     Returns:
         dict: Validation result for the uploaded thumbnail.
     """
-    temp_dir = "temp_uploads"
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_path = os.path.join(temp_dir, file.filename)
+    try:
+        temp_dir = "temp_uploads"
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_path = os.path.join(temp_dir, file.filename)
 
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    result = validate_thumbnail(temp_path)
-    os.remove(temp_path)
+        result = validate_thumbnail(temp_path)
+        os.remove(temp_path)
 
-    logger.info(f"User {user.id} validated a thumbnail: {file.filename}")
-    return result
+        logger.info(f"User {user.id} validated a thumbnail: {file.filename}")
+        return result
+
+    except Exception as e:
+        logger.exception(f"Failed to validate thumbnail by user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to validate thumbnail.")
 
 @thumbnail_router.get("/get_thumbnails/")
 def get_my_thumbnails(
@@ -168,23 +187,28 @@ def get_my_thumbnails(
     Returns:
         list: List of thumbnails associated with the user.
     """
-    thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
-    logger.info(f"User {user.id} retrieved {len(thumbnails)} thumbnails.")
-    return [
-        {
-            "id": thumb.id,
-            "video_id": thumb.video_id,
-            "title": thumb.title,
-            "url": thumb.url,
-            "saved_path": thumb.saved_path,
-            "text_detection": thumb.text_detection,
-            "face_detection": thumb.face_detection,
-            "emotion": thumb.emotion,
-            "color_palette": thumb.color_palette,
-            "keyword": thumb.keyword,
-        }
-        for thumb in thumbnails
-    ]
+    try:
+        thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
+        logger.info(f"User {user.id} retrieved {len(thumbnails)} thumbnails.")
+        return [
+            {
+                "id": thumb.id,
+                "video_id": thumb.video_id,
+                "title": thumb.title,
+                "url": thumb.url,
+                "saved_path": thumb.saved_path,
+                "text_detection": thumb.text_detection,
+                "face_detection": thumb.face_detection,
+                "emotion": thumb.emotion,
+                "color_palette": thumb.color_palette,
+                "keyword": thumb.keyword,
+            }
+            for thumb in thumbnails
+        ]
+
+    except Exception as e:
+        logger.exception(f"Failed to retrieve thumbnails for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve thumbnails.")
 
 @thumbnail_router.post("/generate_thumbnail/")
 async def generate_thumbnail(
@@ -205,28 +229,32 @@ async def generate_thumbnail(
     Returns:
         dict: Message indicating success and path of the generated thumbnail.
     """
-    contents = await image.read()
-    image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
+    try:
+        contents = await image.read()
+        image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    pipe = StableDiffusionImg2ImgPipeline.from_pretrained("runwayml/stable-diffusion-v1-5").to(device)
-    
-    result = pipe(prompt=prompt, image=image, strength=0.7).images[0]
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        pipe = StableDiffusionImg2ImgPipeline.from_pretrained("runwayml/stable-diffusion-v1-5").to(device)
+        
+        result = pipe(prompt=prompt, image=image, strength=0.7).images[0]
 
-    output_folder = GENERATED_THUMBNAILS_PATH
-    if not filename:
-        logger.warning(f"User {user.id} failed to generate thumbnail: filename is required.")
-        raise HTTPException(status_code=400, detail="Filename is required.")
-    
-    if not filename.lower().endswith(".png"):
-        filename += ".png"
+        output_folder = GENERATED_THUMBNAILS_PATH
+        if not filename:
+            logger.warning(f"User {user.id} failed to generate thumbnail: filename is required.")
+            raise HTTPException(status_code=400, detail="Filename is required.")
+        
+        if not filename.lower().endswith(".png"):
+            filename += ".png"
 
-    output_path = os.path.join(output_folder, filename)
-    result.save(output_path)
+        output_path = os.path.join(output_folder, filename)
+        result.save(output_path)
 
-    logger.info(f"User {user.id} generated a thumbnail with prompt '{prompt}' and saved as {filename}.")
-    return {
-        "message": "Image generated successfully.",
-        "output_path": output_path.replace("\\", "/")
+        logger.info(f"User {user.id} generated a thumbnail with prompt '{prompt}' and saved as {filename}.")
+        return {
+            "message": "Image generated successfully.",
+            "output_path": output_path.replace("\\", "/")
         }
+
+    except Exception as e:
+        logger.exception(f"Failed to generate thumbnail for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate thumbnail.")

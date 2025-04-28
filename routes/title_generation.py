@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends,HTTPException
 from database.db_connection import get_db
 from database.models import GeneratedTitle, User
 from functionality.current_user import get_current_user  
@@ -29,8 +29,23 @@ def get_titles(
         HTTPException:
             - If the title generation fails or if there is any issue with user authentication.
     """
+    if not topic:
+        logger.error(f"User {user.id} provided an empty topic for title generation.")
+        raise HTTPException(status_code=400, detail="Topic cannot be empty.")
+    
     logger.info(f"User {user.id} is requesting AI-generated titles for topic '{topic}'")
-    return generate_ai_titles(topic, user.id, db)  
+
+    try:
+        titles = generate_ai_titles(topic, user.id, db)
+        if not titles:
+            logger.warning(f"No titles were generated for user {user.id} with topic '{topic}'")
+            raise HTTPException(status_code=500, detail="Title generation failed.")
+        return {"topic": topic, "generated_titles": titles}
+    
+    except Exception as e:
+        logger.exception(f"Error occurred during title generation for user {user.id} with topic '{topic}': {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while generating titles.")
+
 
 @router.get("/user_titles/")
 def get_user_titles(
@@ -52,14 +67,26 @@ def get_user_titles(
             - If no titles are found or if there are any issues retrieving the titles.
     """
     logger.info(f"User {user.id} is fetching their AI-generated titles.")
-    rows = db.query(GeneratedTitle).filter(GeneratedTitle.user_id == user.id).all()
     
-    all_titles = []
-    for row in rows:
-        if isinstance(row.titles, list):
-            all_titles.extend(row.titles)
-        else:
-            all_titles.append(row.titles)  
+    try:
+        rows = db.query(GeneratedTitle).filter(GeneratedTitle.user_id == user.id).all()
 
-    logger.info(f"User {user.id} has {len(all_titles)} generated titles.")
-    return {"user_id": user.id, "generated_titles": all_titles}
+        if not rows:
+            logger.warning(f"No generated titles found for user {user.id}.")
+            raise HTTPException(status_code=404, detail="No titles found for this user.")
+
+        all_titles = []
+        for row in rows:
+            # Assuming row.titles might be a serialized list (e.g., JSON)
+            if isinstance(row.titles, list):
+                all_titles.extend(row.titles)
+            else:
+                all_titles.append(row.titles)  # Assuming titles are a single string
+
+        logger.info(f"User {user.id} has {len(all_titles)} generated titles.")
+        return {"user_id": user.id, "generated_titles": all_titles}
+    
+    except Exception as e:
+        logger.exception(f"Error occurred while fetching titles for user {user.id}: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while retrieving titles.")
+

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-
+from utils.logging_utils import logger
 def calculate_view_to_subscriber_ratio(views:int, subscribers:int):
     """
     Calculate the View-to-Subscriber ratio.
@@ -22,8 +22,10 @@ def calculate_view_to_subscriber_ratio(views:int, subscribers:int):
         views = int(views) if views is not None else 0
         subscribers = int(subscribers) if subscribers is not None else 0
         return round(views / subscribers, 2) if subscribers > 0 else 0
-    except (ValueError, TypeError):
-        return 0  
+    except (ValueError, TypeError) as e:
+        # Log the error with specific details
+        logger.error(f"Error calculating View-to-Subscriber ratio. Views: {views}, Subscribers: {subscribers}. Error: {e}")
+        return 0
 
 def calculate_view_velocity(video:int):
     """
@@ -83,5 +85,7 @@ def calculate_engagement_rate(video:int):
         views = int(video.get("views", 1))  
         
         return round(((likes + comments) / views) * 100, 2) if views > 0 else 0
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
+        # Log error details
+        logger.error(f"Error calculating engagement rate. Video details: {video}. Error: {e}")
         return 0  

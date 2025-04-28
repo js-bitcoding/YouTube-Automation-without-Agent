@@ -8,12 +8,13 @@ from langchain_ollama import OllamaLLM
 from langchain.memory import ConversationBufferMemory
 from langchain.agents import initialize_agent, AgentType
 from database.models import GeneratedTitle
+from utils.logging_utils import logger  
 
 load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
-llm = OllamaLLM(model="llama3.2:1b")  
+llm = OllamaLLM(model="llama3.2:1b")
 
 title_tool = Tool(
     name="YouTubeTitleGenerator",
@@ -44,8 +45,12 @@ def extract_video_id(youtube_url: str) -> str:
     Returns:
         str: The video ID if found, or None if the URL is invalid or does not contain a video ID.
     """
-    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", youtube_url)
-    return match.group(1) if match else None
+    try:
+        match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", youtube_url)
+        return match.group(1) if match else None
+    except Exception as e:
+        logger.error(f"Error extracting video ID from URL: {e}")
+        return None
 
 def get_video_metadata(youtube_url: str):
     """
@@ -58,13 +63,13 @@ def get_video_metadata(youtube_url: str):
         tuple: (title (str) or None, description (str) or None) if found;
                otherwise (None, None).
     """
-    video_id = extract_video_id(youtube_url)
-    if not video_id:
-        return None, None
-
-    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
-
     try:
+        video_id = extract_video_id(youtube_url)
+        if not video_id:
+            return None, None
+
+        api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
+
         response = requests.get(api_url, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -76,7 +81,11 @@ def get_video_metadata(youtube_url: str):
             return video_topic, video_description
         else:
             return None, None
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching video metadata for URL {youtube_url}: {e}")
+        return None, None
+    except Exception as e:
+        logger.error(f"Unexpected error while retrieving metadata for {youtube_url}: {e}")
         return None, None
 
 def process_generated_titles(response: str) -> list:
@@ -89,13 +98,17 @@ def process_generated_titles(response: str) -> list:
     Returns:
         list: A list of processed titles, up to a maximum of 6.
     """
-    if not response:
-        return []
+    try:
+        if not response:
+            return []
 
-    titles = response.strip().split("\n")
-    titles = [re.sub(r"^\d+[\.\)]?\s*", "", title).strip() for title in titles if title.strip()]
-    
-    return titles[:6]  
+        titles = response.strip().split("\n")
+        titles = [re.sub(r"^\d+[\.\)]?\s*", "", title).strip() for title in titles if title.strip()]
+        
+        return titles[:6]
+    except Exception as e:
+        logger.error(f"Error processing generated titles: {e}")
+        return []
 
 def generate_titles_prompt(video_topic: str, video_description: str = "") -> str:
     """
@@ -124,9 +137,13 @@ def detect_input_type(user_input: str):
     Returns:
         str: "url" if the input is a YouTube URL, otherwise "topic".
     """
-    if "youtube.com" in user_input or "youtu.be" in user_input:
-        return "url"
-    return "topic"
+    try:
+        if "youtube.com" in user_input or "youtu.be" in user_input:
+            return "url"
+        return "topic"
+    except Exception as e:
+        logger.error(f"Error detecting input type: {e}")
+        return "topic"
 
 def generate_ai_titles(user_input: str, user_id: int, db: Session):
     """
@@ -149,18 +166,25 @@ def generate_ai_titles(user_input: str, user_id: int, db: Session):
 
     try:
         response = agent.invoke({"input": generate_titles_prompt(user_input)})
+        
         if isinstance(response, dict) and "output" in response:
             response = response["output"]
+        
         if not isinstance(response, str):
             raise ValueError(f"Unexpected agent response format: {response}")
-    except Exception:
+        
+        titles = process_generated_titles(response)
+
+        db_title = GeneratedTitle(video_topic=user_input, titles=titles, user_id=user_id)
+        db.add(db_title)
+        db.commit()
+        db.refresh(db_title)
+
+        return {"titles": titles}
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error during AI title generation: {e}")
+        raise ValueError("Failed to generate titles due to a network issue. Please try again later.")
+    except Exception as e:
+        logger.error(f"Error during AI title generation: {e}")
         raise ValueError("Failed to generate titles. Please try again later.")
-
-    titles = process_generated_titles(response)
-
-    db_title = GeneratedTitle(video_topic=user_input, titles=titles, user_id=user_id)
-    db.add(db_title)
-    db.commit()
-    db.refresh(db_title)
-
-    return {"titles": titles}

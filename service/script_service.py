@@ -48,22 +48,32 @@ def analyze_transcript_style(transcript: str):
 
     """
 
-    model = genai.GenerativeModel("gemini-1.5-pro-latest")
-    response = model.generate_content(analysis_prompt)
-    style = ""
-    tone = ""
-    if response and response.text:
-        lines = response.text.splitlines()
-        logger.info(f"lines:::{lines}")
-        for line in lines:
-            if line.lower().startswith("style:"):
-                style = line.split(":", 1)[1].strip()
-                logger.info(f"Style:::{style}")
-            if line.lower().startswith("tone:"):
-                tone = line.split(":", 1)[1].strip()
-                logger.info(f"Tone:::{tone}")
-        return {"tone": tone, "style": style}
-    return "Casual", "Casual"
+    try:
+        model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        response = model.generate_content(analysis_prompt)
+
+        if response and response.text:
+            style = ""
+            tone = ""
+            lines = response.text.splitlines()
+            logger.info(f"Received response: {lines}")
+
+            for line in lines:
+                if line.lower().startswith("style:"):
+                    style = line.split(":", 1)[1].strip()
+                    logger.info(f"Extracted Style: {style}")
+                if line.lower().startswith("tone:"):
+                    tone = line.split(":", 1)[1].strip()
+                    logger.info(f"Extracted Tone: {tone}")
+            return {"tone": tone, "style": style}
+
+        else:
+            logger.warning("Response text from the model is empty or malformed.")
+            return {"tone": "Casual", "style": "Casual"}
+
+    except Exception as e:
+        logger.error(f"Error analyzing transcript style: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to analyze transcript style due to an internal error.")
 
 def generate_script(document_content: str, style: str, tone: str, mode: str = "Short-form"):
     """
@@ -105,15 +115,25 @@ def generate_script(document_content: str, style: str, tone: str, mode: str = "S
         ### **Generate a new, detailed, and engaging YouTube script based on the above guidelines.**  
         """
 
-    logger.info("Generating Script with the Gemini::::", prompt)
-    model = genai.GenerativeModel("gemini-1.5-pro-latest")
-    response = model.generate_content(prompt)
-    logger.info(f"Response form Gemini :: {response}")
-    if response and response.text:
-        formatted_script = response.text.replace("\n", "\n\n")
-        return formatted_script
-    else:
-        return "Error generating script"
+    try:
+        # Generate script with the model
+        logger.info("Generating Script with Gemini model...")
+        model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        response = model.generate_content(prompt)
+
+        logger.info(f"Response from Gemini: {response}")
+
+        if response and response.text:
+            formatted_script = response.text.replace("\n", "\n\n")
+            return formatted_script
+        else:
+            logger.warning("Empty or invalid response received from the model.")
+            return "Error generating script: No valid response from the model."
+
+    except Exception as e:
+        # Handle any exceptions that may arise during script generation
+        logger.error(f"Error generating script: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate the YouTube script due to an internal error.")
 
 def convert_to_wav(input_file: str) -> str:
     """
@@ -132,16 +152,29 @@ def convert_to_wav(input_file: str) -> str:
     
     If the input file is already in WAV format, it simply returns the input file path without modification.
     """
-    file_ext = os.path.splitext(input_file)[-1].lower()
-    wav_file = input_file.replace(file_ext, ".wav")
- 
-    if file_ext != ".wav":
+    try:
+        file_ext = os.path.splitext(input_file)[-1].lower()
+
+        # If file is already in WAV format, return the same file path
+        if file_ext == ".wav":
+            logger.info(f"The file is already in WAV format: {input_file}")
+            return input_file
+
+        wav_file = input_file.replace(file_ext, ".wav")
+
+        # Process conversion
+        logger.info(f"Converting {input_file} to WAV format...")
         audio = AudioSegment.from_file(input_file, format=file_ext.replace(".", ""))
         audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)  # Mono, 16kHz, 16-bit PCM
         audio.export(wav_file, format="wav")
- 
-    return wav_file
- 
+
+        logger.info(f"Successfully converted {input_file} to {wav_file}")
+        return wav_file
+
+    except Exception as e:
+        logger.error(f"Error converting file {input_file} to WAV format: {str(e)}")
+        raise RuntimeError(f"Failed to convert {input_file} to WAV format") from e
+
 def transcribe_audio(file_path: str):
     """
     Converts an audio file to WAV format and transcribes the speech to text using Vosk model.
@@ -163,19 +196,30 @@ def transcribe_audio(file_path: str):
     """
     model_path = "action_models/vosk-model-small-en-us-0.15" 
     if not os.path.exists(model_path):
-        raise Exception("Please download the Vosk model and place it in the 'models' folder.")
-
-    wav_file = convert_to_wav(file_path)
-
+        logger.error("Vosk model not found. Please download the Vosk model and place it in the 'models' folder.")
+        raise Exception("Vosk model not found. Please download the Vosk model and place it in the 'models' folder.")
+    
+    # Convert audio to WAV format
+    try:
+        wav_file = convert_to_wav(file_path)
+    except Exception as e:
+        logger.error(f"Error converting file {file_path} to WAV: {e}")
+        raise Exception(f"Error converting file {file_path} to WAV.") from e
+    
+    # Transcribe audio using Vosk
     try:
         with wave.open(wav_file, "rb") as wf:
+            # Check if the audio file is in the required format (mono PCM, 16-bit)
             if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-                raise Exception("Audio file must be WAV format mono PCM.")
+                logger.error(f"Invalid audio format for file {wav_file}: Expected mono PCM, 16-bit sample width.")
+                raise Exception("Audio file must be in WAV format, mono PCM, 16-bit sample width.")
 
+            # Initialize Vosk recognizer
             model = Model(model_path)
             rec = KaldiRecognizer(model, wf.getframerate())
             result_text = ""
 
+            # Process audio data in chunks
             while True:
                 data = wf.readframes(4000)
                 if len(data) == 0:
@@ -184,13 +228,23 @@ def transcribe_audio(file_path: str):
                     res = json.loads(rec.Result())
                     result_text += " " + res.get("text", "")
 
+            # Finalize transcription
             res = json.loads(rec.FinalResult())
             result_text += " " + res.get("text", "")
-  
-    finally:
+        
+    except Exception as e:
+        logger.error(f"Error during transcription: {e}")
+        raise Exception(f"Error during transcription: {e}") from e
+    
+    # Clean up the WAV file
+    try:
         if os.path.exists(wav_file):
             os.remove(wav_file)
+            logger.info(f"Temporary WAV file {wav_file} removed.")
+    except Exception as e:
+        logger.error(f"Error removing temporary WAV file {wav_file}: {e}")
 
+    # Return transcription result
     return {"transcription": result_text.strip()}
 
 async def handle_voice_tone_upload(file: UploadFile, user_id: int) -> str:
@@ -210,34 +264,61 @@ async def handle_voice_tone_upload(file: UploadFile, user_id: int) -> str:
             - If any error occurs during the conversion or saving process.
     """
     ext = file.filename.split(".")[-1].lower()
+    
+    # Validate file extension
     if ext not in ["mp3", "wav"]:
+        logger.error(f"Invalid file type uploaded by user {user_id}: {file.filename}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only .mp3 or .wav files are allowed"
         )
 
+    # Define the final path where the voice tone file will be saved
     base_filename = Path(file.filename).stem
     voice_sample_path = Path(VOICE_TONE_DIR) / f"{base_filename}.wav"
-
+    
+    # If the file already exists, return the existing file path
     if voice_sample_path.exists():
+        logger.info(f"Voice tone file already exists for user {user_id}: {voice_sample_path}")
         return str(voice_sample_path)
 
+    # Create a temporary path for saving the file
     temp_path = Path(VOICE_TONE_DIR) / f"temp_{user_id}.{ext}"
 
-    with open(temp_path, "wb") as f:
-        f.write(await file.read())
-
     try:
+        # Save the uploaded file to the temporary location
+        with open(temp_path, "wb") as f:
+            f.write(await file.read())
+        logger.info(f"File uploaded successfully for user {user_id}: {temp_path}")
+
+        # If the file is an mp3, convert it to wav format
         if ext == "mp3":
-            audio = AudioSegment.from_mp3(temp_path)
-            audio.export(voice_sample_path, format="wav")
+            try:
+                audio = AudioSegment.from_mp3(temp_path)
+                audio.export(voice_sample_path, format="wav")
+                logger.info(f"Converted {temp_path} to {voice_sample_path}")
+            except Exception as e:
+                logger.error(f"Error converting MP3 to WAV for user {user_id}: {e}")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error converting MP3 to WAV.")
         else:
+            # For WAV files, just rename the temporary file to the final path
             temp_path.rename(voice_sample_path)
+            logger.info(f"Moved {temp_path} to final destination: {voice_sample_path}")
 
         return str(voice_sample_path)
 
     except Exception as e:
+        logger.error(f"Error processing the uploaded file for user {user_id}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    finally:
+        # Clean up the temporary file if it exists
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+                logger.info(f"Removed temporary file: {temp_path}")
+            except Exception as cleanup_error:
+                logger.error(f"Error removing temporary file {temp_path}: {cleanup_error}")
 
 MAX_CHARS = 300
 def split_text(text: str, max_length: int = MAX_CHARS):
@@ -258,18 +339,32 @@ def split_text(text: str, max_length: int = MAX_CHARS):
         print(result)  # Output: ['This is the first sentence. This is the second sentence. ', 
                         'This is the third sentence.']
     """
-    sentences = text.split('. ')
-    chunks = []
-    current = ""
-    for sentence in sentences:
-        if len(current) + len(sentence) < max_length:
-            current += sentence + ". "
-        else:
+    try:
+        if not text:
+            raise ValueError("The input text cannot be empty or None.")
+
+        sentences = text.split('. ')
+        if not sentences:
+            raise ValueError("The input text must contain at least one sentence.")
+
+        chunks = []
+        current = ""
+
+        for sentence in sentences:
+            if len(current) + len(sentence) + 1 <= max_length:  # +1 for space or period
+                current += sentence + ". "
+            else:
+                chunks.append(current.strip())
+                current = sentence + ". "
+        
+        if current:
             chunks.append(current.strip())
-            current = sentence + ". "
-    if current:
-        chunks.append(current.strip())
-    return chunks
+        
+        return chunks
+
+    except Exception as e:
+        print(f"Error in split_text: {str(e)}")
+        return []  
 
 def get_video_details(query: str, max_results: int = 5):
     """
@@ -293,18 +388,27 @@ def get_video_details(query: str, max_results: int = 5):
         #   {"video_id": "opqrstuvwxyz", "title": "Master Python quickly", "link": "https://www.youtube.com/watch?v=opqrstuvwxyz"}
         # ]
     """
-    url = "https://www.googleapis.com/youtube/v3/search"
-    params = {
-        "part": "snippet",
-        "q": query,
-        "maxResults": max_results,
-        "key": YOUTUBE_API_KEY,
-        "type": "video"
-    }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
+    try:
+        api_key = os.getenv("YOUTUBE_API_KEY")  # Ensure to set this in your environment variables
+
+        if not api_key:
+            raise ValueError("YOUTUBE_API_KEY environment variable is not set")
+
+        url = "https://www.googleapis.com/youtube/v3/search"
+        params = {
+            "part": "snippet",
+            "q": query,
+            "maxResults": max_results,
+            "key": api_key,
+            "type": "video"
+        }
+
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx, 5xx)
+
         items = response.json().get("items", [])
         video_details = []
+
         for item in items:
             video_id = item["id"]["videoId"]
             title = item["snippet"]["title"]
@@ -314,8 +418,22 @@ def get_video_details(query: str, max_results: int = 5):
                 "title": title,
                 "link": link
             })
+
         return video_details
-    else:
+
+    except requests.exceptions.RequestException as e:
+        # Handle request errors
+        print(f"Error occurred while fetching YouTube data: {e}")
+        return []
+
+    except ValueError as ve:
+        # Handle value errors such as missing API key
+        print(f"ValueError: {ve}")
+        return []
+
+    except Exception as e:
+        # Catch all other exceptions
+        print(f"Error in get_video_details: {str(e)}")
         return []
 
 def get_video_id(youtube_url: str):
@@ -335,8 +453,21 @@ def get_video_id(youtube_url: str):
         print(video_id)
         # Output: "dQw4w9WgXcQ"
     """
-    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", youtube_url)
-    return match.group(1) if match else None
+    try:
+        if not isinstance(youtube_url, str) or not youtube_url.strip():
+            raise ValueError("The input URL must be a valid non-empty string.")
+
+        match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", youtube_url)
+        
+        if match:
+            return match.group(1)
+        else:
+            return None
+
+    except Exception as e:
+        # Handle any errors gracefully
+        print(f"Error in get_video_id: {str(e)}")
+        return None
 
 def fetch_transcript(youtube_url: str):
     """
@@ -353,33 +484,51 @@ def fetch_transcript(youtube_url: str):
             - str or None: The transcript text if available or None if no transcript could be fetched.
             - str or None: An error message if something goes wrong, or None if the operation is successful.
     """
-    video_id = get_video_id(youtube_url)
-    if not video_id:
-        return None, "Invalid YouTube URL"
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        logger.info(f"transcript list :: {transcript_list}")
-        transcript_text = " ".join([item["text"] for item in transcript_list])
-        logger.info(f"transcript text :: {transcript_text}")
-        return (transcript_text if transcript_text else None), None
-    except Exception as e:
-        logger.info(f"No subtitles found for video {video_id}. Trying Whisper transcription...")
+        # Validate the youtube_url
+        if not isinstance(youtube_url, str) or not youtube_url.strip():
+            return None, "Invalid input: URL must be a non-empty string"
 
-        unique_filename = f"{uuid.uuid4().hex}.mp3"
-        audio_path = os.path.join("tmp", unique_filename)
+        # Extract video ID from URL
+        video_id = get_video_id(youtube_url)
+        if not video_id:
+            return None, "Invalid YouTube URL"
 
-        if download_audio(youtube_url, audio_path):
-            if os.path.exists(audio_path):
-                try:
-                    transcript_text = transcribe_audio_with_whisper(audio_path)
-                    os.remove(audio_path)
-                    return transcript_text, None
-                except Exception as whisper_error:
-                    return None, f"Whisper transcription failed: {whisper_error}"
+        # Try to fetch transcript from YouTube API
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+            logger.info(f"Transcript found for video {video_id} :: {transcript_list}")
+
+            transcript_text = " ".join([item["text"] for item in transcript_list])
+            return transcript_text if transcript_text else None, None
+
+        except Exception as api_error:
+            logger.error(f"Failed to fetch transcript via YouTube API for video {video_id}: {api_error}")
+            # If transcript not found, attempt Whisper transcription
+
+            unique_filename = f"{uuid.uuid4().hex}.mp3"
+            audio_path = os.path.join("tmp", unique_filename)
+
+            # Download audio for transcription
+            if download_audio(youtube_url, audio_path):
+                if os.path.exists(audio_path):
+                    try:
+                        # Use Whisper for transcription
+                        transcript_text = transcribe_audio_with_whisper(audio_path)
+                        os.remove(audio_path)
+                        return transcript_text, None
+                    except Exception as whisper_error:
+                        logger.error(f"Whisper transcription failed for {audio_path}: {whisper_error}")
+                        return None, f"Whisper transcription failed: {whisper_error}"
+
+                else:
+                    return None, f"Audio file not found at path: {audio_path}"
             else:
-                return None, f"Audio file not found at path: {audio_path}"
-        else:
-            return None, f"Failed to download audio for transcription"
+                return None, "Failed to download audio for transcription"
+    except Exception as e:
+        # Catch any other unforeseen errors
+        logger.error(f"An error occurred while fetching transcript: {str(e)}")
+        return None, f"An error occurred while fetching transcript: {str(e)}"
 
 def format_script_response(raw_script: str) -> str:
     """
@@ -396,12 +545,28 @@ def format_script_response(raw_script: str) -> str:
         str: A cleaned and formatted version of the script with the unwanted parts removed.
 
     """
-    cleaned_script = re.sub(r'\(\d{1,2}:\d{2} - \d{1,2}:\d{2}\)', '', raw_script)
-    cleaned_script = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned_script)
-    cleaned_script = re.sub(r'\(.*?\)', '', cleaned_script)
-    cleaned_script = re.sub(r'\n+', '\n', cleaned_script).strip()
+    try:
+        if not isinstance(raw_script, str):
+            raise ValueError("Input 'raw_script' must be a string")
 
-    return cleaned_script
+        cleaned_script = re.sub(r'\(\d{1,2}:\d{2} - \d{1,2}:\d{2}\)', '', raw_script)  
+        cleaned_script = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned_script)  
+        cleaned_script = re.sub(r'\(.*?\)', '', cleaned_script)  
+        cleaned_script = re.sub(r'\n+', '\n', cleaned_script).strip()  
+
+        return cleaned_script
+
+    except ValueError as e:
+        logger.error(f"Input validation error: {e}")
+        return f"Error: {e}"
+    
+    except re.error as e:
+        logger.error(f"Regex error occurred: {e}")
+        return f"Error: Regex error occurred - {e}"
+
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return f"Error: An unexpected error occurred - {e}"
 
 def download_audio(video_url: str, output_path: str) -> bool:
     """
@@ -421,10 +586,28 @@ def download_audio(video_url: str, output_path: str) -> bool:
             "-o", output_path,
             video_url
         ]
-        subprocess.run(command, check=True)
+
+        result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        if result.stdout:
+            logger.info(f"yt-dlp output: {result.stdout}")
+        if result.stderr:
+            logger.error(f"yt-dlp error: {result.stderr}")
+
         return True
+
     except subprocess.CalledProcessError as e:
-        logger.info(f"Error downloading audio: {e}")
+
+        logger.error(f"Error downloading audio: {e}")
+        logger.error(f"stderr: {e.stderr}")
+        return False
+
+    except FileNotFoundError as e:
+        logger.error("yt-dlp executable not found. Please install yt-dlp.")
+        return False
+
+    except Exception as e:
+        logger.error(f"Unexpected error while downloading audio: {e}")
         return False
 
 def transcribe_audio_with_whisper(audio_path: str) -> str:
@@ -437,9 +620,31 @@ def transcribe_audio_with_whisper(audio_path: str) -> str:
     Returns:
         str: Transcribed text from the audio file.
     """
-    model = whisper.load_model("base")
-    result = model.transcribe(audio_path)
-    return result["text"]
+    try:
+        # Check if the audio file exists
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"The audio file at {audio_path} was not found.")
+        
+        # Load the Whisper model
+        model = whisper.load_model("base")
+        
+        # Transcribe the audio
+        result = model.transcribe(audio_path)
+        
+        # Return the transcribed text
+        return result["text"]
+    
+    except FileNotFoundError as e:
+        # Handle case where the audio file is not found
+        return f"Error: {e}"
+
+    except whisper.WhisperError as e:
+        # Handle errors related to the Whisper model (if any)
+        return f"Whisper model error: {e}"
+    
+    except Exception as e:
+        # Handle any other unexpected errors
+        return f"An unexpected error occurred: {e}"
 
 def get_user_voice_sample(user_id: int) -> str:
     """
@@ -451,11 +656,29 @@ def get_user_voice_sample(user_id: int) -> str:
     Returns:
         str: Path to the voice sample file if it exists, otherwise None.
     """
-    for ext in ["mp3", "wav"]:
-        path = os.path.join(VOICE_TONE_DIR, f"user_{user_id}.{ext}")
-        if os.path.exists(path):
-            return path
-    return None
+    try:
+        # Loop through possible file extensions (.mp3, .wav)
+        for ext in ["mp3", "wav"]:
+            path = os.path.join(VOICE_TONE_DIR, f"user_{user_id}.{ext}")
+            
+            # Check if the file exists
+            if os.path.exists(path):
+                return path
+        
+        # If no file is found, return None
+        return None
+    
+    except FileNotFoundError:
+        # Handle the case where the directory is not found or not accessible
+        return f"Error: The directory {VOICE_TONE_DIR} was not found."
+
+    except PermissionError:
+        # Handle the case where there are permission issues
+        return f"Error: Permission denied when accessing {VOICE_TONE_DIR}."
+
+    except Exception as e:
+        # Catch any other unexpected exceptions
+        return f"An unexpected error occurred: {e}"
 
 def extract_text_from_file(file_path: str) -> str:
     """
@@ -467,14 +690,25 @@ def extract_text_from_file(file_path: str) -> str:
     Returns:
         str: Extracted text from the file.
     """
-    if file_path.endswith(".pdf"):
-        return extract_text_from_pdf(file_path)
-    elif file_path.endswith(".docx"):
-        return extract_text_from_docx(file_path)
-    elif file_path.endswith(".txt"):
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    return ""
+    try:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        if file_path.endswith(".pdf"):
+            return extract_text_from_pdf(file_path)
+        elif file_path.endswith(".docx"):
+            return extract_text_from_docx(file_path)
+        elif file_path.endswith(".txt"):
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        else:
+            raise ValueError("Unsupported file format. Only .pdf, .docx, and .txt files are supported.")
+    except FileNotFoundError as e:
+        return f"Error: {str(e)}"
+    except ValueError as e:
+        return f"Error: {str(e)}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
 
 def extract_text_from_pdf(file_path: str) -> str:
     """
@@ -486,12 +720,15 @@ def extract_text_from_pdf(file_path: str) -> str:
     Returns:
         str: Extracted text from the PDF file.
     """
-    reader = PdfReader(file_path)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() + "\n"
-    return text.strip()
-
+    try:
+        reader = PdfReader(file_path)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip() if text else "No text found in the PDF."
+    except Exception as e:
+        return f"Error extracting text from PDF: {str(e)}"
+    
 def extract_text_from_docx(file_path: str) -> str:
     """
     Extracts text from a DOCX file.
@@ -502,6 +739,9 @@ def extract_text_from_docx(file_path: str) -> str:
     Returns:
         str: Extracted text from the DOCX file.
     """
-    doc = DocxDocument(file_path)
-    text = "\n".join([para.text for para in doc.paragraphs])
-    return text.strip()
+    try:
+        doc = DocxDocument(file_path)
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text.strip() if text else "No text found in the DOCX."
+    except Exception as e:
+        return f"Error extracting text from DOCX: {str(e)}"
