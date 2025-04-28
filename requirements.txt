@@ -42,3 +42,6 @@ yt-dlp==2025.3.31
 PyPDF2
 python-docx
 pydantic[email]
+chromadb
+doc2docx
+langchain-experimental

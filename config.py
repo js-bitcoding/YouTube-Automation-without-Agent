@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from langchain_ollama import OllamaLLM, OllamaEmbeddings
 
 load_dotenv()
 
@@ -14,3 +15,6 @@ GENERATED_THUMBNAILS_PATH = os.getenv("GENERATED_THUMBNAILS_PATH")
 GENERATED_AUDIO_PATH = os.getenv("GENERATED_AUDIO_PATH")
 VOICE_TONE_DIR = os.getenv("VOICE_TONE_DIR")
 UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
+
+OLLAMA_EMBEDDING_MODEL = OllamaEmbeddings(model=OLLAMA_MODEL)
+OLLAMA_RESPONSE_MODEL = OllamaLLM(model="tinyllama:1.1b")

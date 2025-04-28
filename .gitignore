@@ -12,6 +12,8 @@ test.py
 tmp/
 temp_uploads/
 uploaded_documents/
+chroma/
+chroma_db/
 
 # Virtual Envs
 venv3.10/
@@ -40,6 +42,8 @@ edited_output.png
 output_snowy_scene.png
 output.mp3
 sample.pdf
+encoded.txt
+convert_to_base64.py
 
 # Logs & test stuff
 *.log

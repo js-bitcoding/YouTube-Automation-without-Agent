@@ -2,15 +2,16 @@ import datetime
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from langchain_community.vectorstores import FAISS
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
+# from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from database.models import Group, Document, YouTubeVideo, ChatConversation, ChatHistory, User,Instruction
 from utils.logging_utils import logger
+from config import OLLAMA_EMBEDDING_MODEL, OLLAMA_RESPONSE_MODEL
 
-llm = OllamaLLM(model="tinyllama:1.1b")
+llm = OLLAMA_RESPONSE_MODEL
 
-ollama_embeddings = OllamaEmbeddings(model="llama3.2:1b")
+ollama_embeddings = OLLAMA_EMBEDDING_MODEL
 
 def fetch_group_data(group_ids: list, db: Session):
     """
@@ -74,7 +75,8 @@ def fetch_group_data(group_ids: list, db: Session):
         "documents": documents
     }
 
-def initialize_faiss_store(documents: list):
+# def initialize_faiss_store(documents: list):
+def initialize_chroma_store(documents: list):
     """
     Creates a FAISS vector store from chunked input documents.
 
@@ -97,7 +99,13 @@ def initialize_faiss_store(documents: list):
             for i, chunk in enumerate(chunks):
                 logger.info(f"Chunk {i+1}: {chunk.page_content}")
 
-        vectorstore = FAISS.from_documents(all_chunks, ollama_embeddings)
+        # vectorstore = FAISS.from_documents(all_chunks, ollama_embeddings)
+        vectorstore = Chroma.from_documents(
+            documents=all_chunks,
+            embedding=ollama_embeddings,
+            persist_directory="./chroma_db"
+        )
+        vectorstore.persist()
         logger.info(f"Vectorstore created with {len(all_chunks)} chunks.")
 
         return vectorstore, all_chunks
@@ -165,7 +173,8 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
         if not group_info["formatted"]:
             raise HTTPException(status_code=404, detail="No content available for this chat")
 
-        vectorstore, all_chunks = initialize_faiss_store(group_info["documents"])
+        # vectorstore, all_chunks = initialize_faiss_store(group_info["documents"])
+        vectorstore, all_chunks = initialize_chroma_store(group_info["documents"])
 
         max_chunks = 10
         chunked_text = "\n\n".join([chunk.page_content for chunk in all_chunks[:max_chunks]])

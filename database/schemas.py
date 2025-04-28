@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, Field, EmailStr
 from fastapi import Form,Body
 
@@ -58,3 +58,28 @@ class InstructionOut(InstructionBase):
 
     class Config:
         orm_mode = True
+
+class GetFileDataRequest(BaseModel):
+    """Request model for the get_file_data endpoint"""
+    collection_name: str
+    username: str
+    file_name: Optional[str] = None
+
+class DeleteFileDataRequest(BaseModel):
+    """Request model for the delete_file_data endpoint"""
+    username: str
+    collection_name: str
+    file_name: str
+
+class DeleteAllCollectionDataRequest(BaseModel):
+    """Request model for the delete_all_collection_data endpoint"""
+    collection_name: str
+    username: str
+
+class VectorDataStoreRequest(BaseModel):
+    collection_name: Union[str, List[str]]
+    username: str
+    filename: str
+    document: str  
+    summary: Optional[str] = None
+    metadata: Optional[dict] = None
