@@ -8,51 +8,25 @@ other/
 edited_output.png
 output_snowy_scene.png
 output.mp3
-test.py
+test*
 tmp/
 temp_uploads/
 uploaded_documents/
 chroma/
 chroma_db/
-
-# Virtual Envs
-venv3.10/
+sample*
+chroma_data/
 .venv/
 env/
 venv/
-
-# Python Bytecode
-__pycache__/
 *.pyc
 *.py[cod]
 *.so
-
-# Environment & Secrets
-.env
 *.env
-
-# Project-specific dirs
-tortoise/
-assets/
-action_models/
-other/
-
-# Output files
-edited_output.png
-output_snowy_scene.png
-output.mp3
-sample.pdf
 encoded.txt
 convert_to_base64.py
-
-# Logs & test stuff
 *.log
-test.py
-
-# OS-generated files
 .DS_Store
 Thumbs.db
-
-# IDE files (VS Code, PyCharm, etc.)
 .vscode/
 .idea/

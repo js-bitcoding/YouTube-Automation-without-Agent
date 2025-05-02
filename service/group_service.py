@@ -65,7 +65,6 @@ async def process_group_content(
         logger.error(f"Error fetching group for project {project_id}: {e}")
         raise HTTPException(status_code=500, detail="Error fetching group.")
 
-    # Process files
     if files:
         for file in files:
             if not file or not file.filename:
@@ -84,7 +83,6 @@ async def process_group_content(
                 file_path = os.path.join(UPLOAD_FOLDER, filename)
 
                 print("file_path :: ", file_path)
-            # Save the file
                 with open(file_path, "wb") as f:
                     print("file type : ", type(file))   
                     content = await file.read()
@@ -92,7 +90,6 @@ async def process_group_content(
 
                 logger.info(f"Extracting text from file {file.filename}")
 
-            # Pass the file (UploadFile) directly to the extractor function
                 await file.seek(0)
                 extracted_text = await extract_text_from_file(file)
             
@@ -100,10 +97,16 @@ async def process_group_content(
 
                 cleaned_text = " ".join(extracted_text.split())
 
+                analysis = analyze_transcript_style(extracted_text)
+                tone = analysis.get("tone", "Unknown")
+                style = analysis.get("style", "Unknown")
+
                 doc_entry = Document(
-                filename=file.filename,
-                content=cleaned_text,
-                group_id=group_id
+                    filename=file.filename,
+                    content=cleaned_text,
+                    tone=tone,
+                    style=style,
+                    group_id=group_id
                 )
                 db.add(doc_entry)
                 db.commit()

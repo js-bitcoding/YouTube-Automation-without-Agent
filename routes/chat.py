@@ -74,11 +74,19 @@ def create_conversation(
         db.commit()
         db.refresh(conversation)
 
+        if session.conversation is None:
+            session.conversation = []
+
+        session.conversation.append(conversation.id)
+        db.commit()
+        db.refresh(session)
+
         logger.info(f"Conversation created with ID {conversation.id} for Session ID {session_id}")
         return conversation
     except Exception as e:
         logger.exception(f"Error creating conversation for Session ID {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Error creating conversation for Session ID {session_id}: {e}")
+
 
 @chat_router.put("/update/{conversation_id}/")
 def update_conversation_name(
@@ -119,7 +127,7 @@ def update_conversation_name(
         return {"message": "Conversation name updated"}
     except Exception as e:
         logger.exception(f"Error updating conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Error updating conversation ID {conversation_id}: {e}")
 
 
 @chat_router.get("/get/{conversation_id}/")
@@ -170,7 +178,8 @@ def get_conversation_by_id(
         }
     except Exception as e:
         logger.exception(f"Error retrieving conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Error retrieving conversation ID {conversation_id}: {e}")
+
 
 @chat_router.delete("/delete/{conversation_id}/")
 def delete_conversation(
@@ -205,7 +214,7 @@ def delete_conversation(
         return {"message": "Conversation deleted"}
     except Exception as e:
         logger.exception(f"Error deleting conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Error deleting conversation ID {conversation_id}: {e}")
 
 
 @chat_router.post("/generate_group_response")
@@ -235,4 +244,4 @@ def generate_group_response(
         return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
     except Exception as e:
         logger.exception(f"Error generating response for Conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Error generating response for Conversation ID {conversation_id}: {e}")

@@ -6,7 +6,7 @@ load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:test123@localhost/youtube_automation")
 

@@ -112,12 +112,10 @@ def save_video(
             logger.error(f"Video {video_id} not found")
             raise HTTPException(status_code=404, detail="Video not found")
 
-        # Ensure the user exists
         user_record = db.query(User).filter(User.id == user.id).first()
         if not user_record:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Handle the channel
         existing_channel = db.query(Channel).filter_by(channel_id=video_details["channel_id"]).first()
         if not existing_channel:
             new_channel = Channel(
@@ -130,7 +128,6 @@ def save_video(
             db.refresh(new_channel)
             logger.info(f"New channel {video_details['channel_name']} added to the database")
 
-        # Handle the video
         existing_video = db.query(Video).filter_by(video_id=video_id).first()
         if not existing_video:
             video_details["view_to_subscriber_ratio"] = calculate_view_to_subscriber_ratio(video_details["views"], video_details["subscribers"])
@@ -162,7 +159,6 @@ def save_video(
             logger.info(f"Video {video_id} already exists in the database")
             video = existing_video
 
-        # Prevent saving the same video multiple times for the user
         existing_entry = (
             db.query(UserSavedVideo)
             .filter(UserSavedVideo.user_id == user.id, UserSavedVideo.video_id == video_id)
@@ -173,7 +169,6 @@ def save_video(
             logger.warning(f"User {user.id} tried to save video {video_id} again.")
             raise HTTPException(status_code=400, detail="Video already saved")
 
-        # Save the video to the user's list
         saved_video = UserSavedVideo(user_id=user.id, video_id=video_id)
         db.add(saved_video)
         db.commit()

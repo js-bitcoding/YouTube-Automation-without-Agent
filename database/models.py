@@ -2,6 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table
 
 timezone = datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -268,7 +269,7 @@ class ChatSession(Base):
     created_at = Column(DateTime, default=timezone)
     updated_at = Column(DateTime, default=timezone, onupdate=timezone)
     is_deleted = Column(Boolean, default=False)
-    conversation = Column(JSON, default=list)
+    conversation = Column(MutableList.as_mutable(JSON), default=list)
 
     groups = relationship("Group", secondary=chat_session_group, back_populates="sessions")
     conversations = relationship("ChatConversation", back_populates="session", cascade="all, delete-orphan")

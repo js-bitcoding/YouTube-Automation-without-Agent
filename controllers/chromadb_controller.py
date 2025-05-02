@@ -64,7 +64,6 @@ class ChromaDBController:
 
             collections = user_client.list_collections()
             return collections
-            # return [str(collection) for collection in collections]
         except Exception as e:
             logger.error(f"Failed to retrieve collections for {username}: {e}")
             raise HTTPException(

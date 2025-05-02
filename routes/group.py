@@ -1,8 +1,5 @@
 import datetime
-from PyPDF2 import PdfReader
-from io import BytesIO
 from typing import List
-from starlette.datastructures import UploadFile as UploadFileStar
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -14,8 +11,6 @@ from service.group_service import (
     process_group_content, 
     get_user_group_with_content_by_id
 )
-from service.script_service import (
-    extract_text_from_file)
 from service.chat_ai_agent_service import initialize_chroma_store
 from database.db_connection import get_db
 from database.models import Group, Document,  Project, User,YouTubeVideo
@@ -84,7 +79,7 @@ async def create_empty_group(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error while creating group for project ID {project_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Unexpected error while creating group for project ID {project_id}: {e}")
 
 @group_router.put("/{group_id}/")
 def update_group_api(
@@ -126,26 +121,26 @@ def update_group_api(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error while updating group {group_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-    
+        raise HTTPException(status_code=500, detail=f"Unexpected error while updating group {group_id}: {e}")
+
+
 @group_router.put("/update-content")
 async def update_group_content(
-    project_id: int = Query(...),
-    group_id: int = Query(...),
+    project_id: int,
+    group_id: int,
     files: List[UploadFile] = File(None),
     youtube_links: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> dict:
     """
-    Updates the content (documents and videos) for a group under a specified project.
-    Saves documents and YouTube transcripts into ChromaDB.
+    Process uploaded documents and YouTube links for a group and store them in vector DB.
 
     Args:
-        project_id (int): ID of the project the group belongs to.
-        group_id (int): ID of the group to update.
-        files (List[UploadFile]): List of document files to be uploaded (optional).
-        youtube_links (List[str]): List of YouTube links to associate with the group (optional).
+        project_id (int): ID of the project.
+        group_id (int): ID of the group.
+        files (List[UploadFile]): Uploaded files.
+        youtube_links (List[str]): Provided YouTube links.
         db (Session): SQLAlchemy DB session.
         current_user (User): Authenticated user.
 
@@ -155,7 +150,6 @@ async def update_group_content(
     try:
         logger.info(f"Updating content for group {group_id} under project {project_id} by user {current_user.id}")
 
-        # ✅ Validate Project
         project = db.query(Project).filter(
             Project.id == project_id,
             Project.user_id == current_user.id,
@@ -165,7 +159,6 @@ async def update_group_content(
             logger.error(f"Project {project_id} not found for user {current_user.id}")
             raise HTTPException(status_code=400, detail="Project not found.")
 
-        # ✅ Validate Group
         group = db.query(Group).filter(
             Group.id == group_id,
             Group.project_id == project_id,
@@ -175,7 +168,6 @@ async def update_group_content(
             logger.warning(f"Group {group_id} not found under project {project_id}")
             raise HTTPException(status_code=404, detail="Group not found.")
 
-        # ✅ Sanitize Inputs
         if files is None:
             files = []
 
@@ -185,7 +177,6 @@ async def update_group_content(
         if not valid_files and not valid_links:
             raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
-        # ✅ Step 1: Process and store documents/videos
         results = await process_group_content(
             project_id=project_id,
             group_id=group_id,
@@ -199,15 +190,12 @@ async def update_group_content(
             logger.warning("Process returned no documents or videos")
             raise HTTPException(status_code=400, detail="No valid documents or YouTube links processed.")
 
-        # ✅ Step 2: Fetch freshly saved content
         saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
         document_texts = [doc.content for doc in saved_documents if doc.content]
 
         saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
         youtube_transcripts = [video.transcript for video in saved_videos if video.transcript]
         
-        
-        # ✅ Step 3: Combine content
         mixed_content = document_texts + youtube_transcripts
 
         if not mixed_content:
@@ -222,10 +210,10 @@ async def update_group_content(
 
         collection_name = f"project_{project_id}_group_{group_id}"
 
-        # ✅ Step 4: Store into ChromaDB
         try:
-            vectorstore, all_chunks, collection_id = initialize_chroma_store(group_data, collection_name)
+            vectorstore, all_chunks, collection_id, embedding = initialize_chroma_store(group_data, collection_name)
             logger.info(f"✅ Chroma Collection ID: {collection_id}")
+            logger.info(f"✅ Chroma Embedding is : {embedding}")
         except Exception as e:
             logger.error(f"🚨 Error initializing Chroma store: {str(e)}")
             raise HTTPException(status_code=500, detail="Error initializing Chroma store")
@@ -236,7 +224,7 @@ async def update_group_content(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating content for group {group_id} under project {project_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"You cannot update this group content {e}")
     
 @group_router.delete("/delete-content")
 async def delete_group_content(
@@ -329,7 +317,7 @@ async def delete_group_content(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error during delete-content: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error during content deletion.")
+        raise HTTPException(status_code=500, detail="Failed during content deletion.")
 
 @group_router.delete("/{group_id}/")
 def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -362,9 +350,9 @@ def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting group {group_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error while deleting the group.")
+        raise HTTPException(status_code=500, detail="Failed while deleting the group.")
 
-@group_router.get("/groups_content/")
+@group_router.get("/")
 def get_user_groups_with_content_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -385,10 +373,8 @@ def get_user_groups_with_content_api(
     logger.info(f"User {current_user.id} is requesting all groups and their content.")
 
     try:
-        # Fetch the user groups and their content
         content = get_user_groups_with_content(current_user.id, db)
 
-        # If no content is found, raise an appropriate exception
         if not content:
             logger.info(f"No groups found for user {current_user.id}.")
             raise HTTPException(status_code=404, detail="No groups found for the current user.")
@@ -400,7 +386,7 @@ def get_user_groups_with_content_api(
         logger.exception(f"Error occurred while fetching groups for user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")
 
-@group_router.get("/group_content/{group_id}/")
+@group_router.get("/{group_id}/")
 def get_user_group_with_content_api(
     group_id: int,
     db: Session = Depends(get_db),
@@ -423,10 +409,8 @@ def get_user_group_with_content_api(
     logger.info(f"User {current_user.id} is requesting content for group {group_id}.")
 
     try:
-        # Fetch the content for the specific group
         content = get_user_group_with_content_by_id(group_id, current_user.id, db)
 
-        # Check if the content was found and is associated with the current user
         if not content:
             logger.warning(f"Group {group_id} not found for user {current_user.id} or unauthorized access.")
             raise HTTPException(status_code=404, detail="Group not found or unauthorized access.")

@@ -12,7 +12,7 @@ from service.engagement_service import (
     calculate_engagement_rate,
 )
 from config import YOUTUBE_API_KEY
-from database.models import Video
+from database.models import Video, timezone
 from utils.logging_utils import logger
 
 BASE_URL = "https://www.googleapis.com/youtube/v3"
@@ -43,7 +43,7 @@ def fetch_video_thumbnails(keyword: str) -> List[Dict[str, str]]:
         }
         
         response = requests.get(YOUTUBE_SEARCH_URL, params=params)
-        response.raise_for_status()  # Raise HTTPError for bad responses
+        response.raise_for_status()
         response_data = response.json()
         logger.info("YouTube API Response:", response_data)
         
@@ -79,7 +79,7 @@ def get_published_after(filter_option: str) -> Optional[str]:
              Returns None if the filter option is invalid.
     """
     try:
-        now = datetime.utcnow()
+        now = timezone
 
         if filter_option == "today":
             return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"

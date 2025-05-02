@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 from database.db_connection import get_db
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi.responses import JSONResponse
-from database.models import User,UserLoginHistory
+from database.models import User, UserLoginHistory, timezone
 from database.schemas import UserLogin,UserRegister
 from functionality.jwt_token import create_jwt_token
 from fastapi import APIRouter, Depends, HTTPException
@@ -108,7 +108,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
             logger.warning(f"Login failed: Invalid credentials for {user_data.username}.")
             raise HTTPException(status_code=400, detail="❌ Invalid username or password.")
 
-        login_record = UserLoginHistory(user_id=user.id, login_time=datetime.utcnow(), logout_time=None)
+        login_record = UserLoginHistory(user_id=user.id, login_time=timezone, logout_time=None)
         db.add(login_record)
 
         user.is_active = True
@@ -156,7 +156,7 @@ def logout(
         ).order_by(UserLoginHistory.login_time.desc()).first()
 
         if latest_login:
-            latest_login.logout_time = datetime.utcnow()
+            latest_login.logout_time = timezone
             db.add(latest_login)
 
         current_user.is_active = False

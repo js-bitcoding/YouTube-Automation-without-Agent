@@ -1,7 +1,7 @@
 import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
-from database.models import ChatConversation, ChatSession,Group
+from database.models import ChatConversation, ChatSession, Group, timezone
 
 def create_chat(
     name: str,
@@ -25,8 +25,8 @@ def create_chat(
         HTTPException: If there are any issues with group retrieval or database operations.
     """
     session = ChatSession(name=name)
-    session.created_at = datetime.datetime.utcnow()
-    session.updated_at = datetime.datetime.utcnow()
+    session.created_at = timezone
+    session.updated_at = timezone
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -38,8 +38,8 @@ def create_chat(
     conversation = ChatConversation(
         name=name,
         chat_session_id=session.id,
-        created_at=datetime.datetime.utcnow(),
-        updated_at=datetime.datetime.utcnow()
+        created_at=timezone,
+        updated_at=timezone
     )
     db.add(conversation)
     db.commit()
@@ -66,7 +66,7 @@ def update_chat(db: Session, conversation_id: int, name: Optional[str] = None):
     if conversation:
         if name:
             conversation.name = name
-        conversation.updated_at = datetime.datetime.utcnow()
+        conversation.updated_at = timezone
         db.commit()
         db.refresh(conversation)
     return conversation
@@ -89,7 +89,7 @@ def delete_chat(db: Session, conversation_id: int):
     conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
     if conversation:
         conversation.is_deleted = True
-        conversation.updated_at = datetime.datetime.utcnow()
+        conversation.updated_at = timezone
         db.commit()
     return conversation
 

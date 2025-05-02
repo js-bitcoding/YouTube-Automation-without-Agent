@@ -30,32 +30,27 @@ def create_project_api(
             - If the project name is empty or invalid.
     """
     try:
-        # Check if the project already exists
         existing_project = db.query(Project).filter(Project.name == name.strip(), Project.user_id == user.id).first()
 
         if existing_project:
             logger.warning(f"User {user.id} attempted to create a project with an existing name: {name}")
             raise HTTPException(status_code=400, detail=f"A project with the name '{name.strip()}' already exists.")
-        
-        # Check if the name is valid
+
         if not isinstance(name, str) or name.strip() == "":
             logger.error(f"User {user.id} provided an invalid project name: {name}")
             raise HTTPException(status_code=400, detail="Project name cannot be empty or invalid.")
-        
-        # Call service layer to handle project creation
+
         created_project = create_project(db=db, name=name.strip(), user_id=user.id)
         logger.info(f"User {user.id} created project: {created_project.name}")
         return created_project
 
     except HTTPException as e:
-        # This will handle the specific HTTPException raised for duplicate project names or invalid input
         logger.error(f"HTTPException occurred while creating project for user {user.id}: {e.detail}")
-        raise e  # Re-raise the same exception so it can be handled by FastAPI
+        raise e 
     
     except Exception as e:
-        # This will handle any unexpected errors
         logger.exception(f"Unexpected error while creating project for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to create project.")
+        raise HTTPException(status_code=500, detail="Failed to create project.")
 
 @project_router.put("/{project_id}/")
 def update_project_api(
@@ -103,7 +98,7 @@ def update_project_api(
     except Exception as e:
         
         logger.exception(f"Error while updating project {project_id} for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to update project.")
+        raise HTTPException(status_code=500, detail="Failed to update project.")
 
 @project_router.delete("/{project_id}/")
 def delete_project_api(
@@ -140,7 +135,7 @@ def delete_project_api(
 
     except Exception as e:
         logger.exception(f"Error while deleting project {project_id} for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to delete project.")
+        raise HTTPException(status_code=500, detail="Failed to delete project.")
 
 
 @project_router.get("/list/")
@@ -183,7 +178,7 @@ def list_projects_api(
         }
     except Exception as e:
         logger.exception(f"Error while listing projects for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to list projects.")
+        raise HTTPException(status_code=500, detail="Failed to list projects.")
 
 
 @project_router.get("/get/{project_id}/")
@@ -229,4 +224,4 @@ def get_project_by_id(
 
     except Exception as e:
         logger.exception(f"Error while retrieving project {project_id} for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to retrieve project.")
+        raise HTTPException(status_code=500, detail="Failed to retrieve project.")

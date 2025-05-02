@@ -36,7 +36,7 @@ def create_project(db: Session, name: str, user_id: int):
 
     except SQLAlchemyError as e:
         logger.error(f"Error creating project: {str(e)}")
-        db.rollback()  # Rollback the transaction in case of error
+        db.rollback() 
         raise HTTPException(status_code=500, detail="Failed to create project. Database error.")
     
 def update_project(db: Session, project_id: int, name: str, user_id: int):
@@ -73,7 +73,7 @@ def update_project(db: Session, project_id: int, name: str, user_id: int):
 
     except SQLAlchemyError as e:
         logger.error(f"Error updating project {project_id}: {str(e)}")
-        db.rollback()  # Rollback the transaction in case of error
+        db.rollback() 
         raise HTTPException(status_code=500, detail="Failed to update project. Database error.")
 
 
@@ -111,7 +111,7 @@ def delete_project(db: Session, project_id: int, user_id: int):
 
     except SQLAlchemyError as e:
         logger.error(f"Error deleting project {project_id}: {str(e)}")
-        db.rollback()  # Rollback the transaction in case of error
+        db.rollback()  
         raise HTTPException(status_code=500, detail="Failed to delete project. Database error.")
 
 def list_projects(db: Session, user_id: int):

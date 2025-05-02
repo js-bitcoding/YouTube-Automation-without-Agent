@@ -39,7 +39,7 @@ def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends
 
     except Exception as e:
         logger.exception(f"Failed to retrieve chat sessions for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch sessions.")
+        raise HTTPException(status_code=500, detail="Unable to fetch sessions.")
 
 
 @sessions_router.get("/{session_id}/")
@@ -79,7 +79,7 @@ def get_session_by_id(
 
     except Exception as e:
         logger.exception(f"Failed to retrieve chat session {session_id} for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch session.")
+        raise HTTPException(status_code=500, detail="Unable to fetch session.")
 
 
 
@@ -174,7 +174,7 @@ def create_session_api(
 
     except Exception as e:
         logger.exception(f"Failed to create chat session for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Failed to create session.")
+        raise HTTPException(status_code=500, detail="Failed to create session.")
 
 @sessions_router.delete("/delete/")
 def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -210,4 +210,4 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
 
     except Exception as e:
         logger.exception(f"Failed to delete session {session_id} for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Failed to delete session.")
+        raise HTTPException(status_code=500, detail="Failed to delete session.")

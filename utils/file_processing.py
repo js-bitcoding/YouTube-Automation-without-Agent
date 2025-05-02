@@ -70,8 +70,9 @@ def split_into_chunks(text: str, summary:str = None) -> list:
         chunks = [doc.page_content for doc in docs]
  
         if summary:
-            chunks.append([f"{summary}\n\n{chunk}" for chunk in chunks])
-       
+            # chunks.append([f"{summary}\n\n{chunk}" for chunk in chunks])
+            chunks.extend([f"{summary}\n\n{chunk}" for chunk in chunks])
+              
         logger.debug(f"Text split into {len(chunks)} semantic chunks")
         return chunks
        
@@ -219,7 +220,7 @@ async def save_html_to_text(url):
 
         if docs_transformed:
             extracted_text = docs_transformed[0].page_content.replace("\n", " ")
-            logger.info(f"Extracted text from {url}: {extracted_text[:200]}...")  # Preview first 200 chars
+            logger.info(f"Extracted text from {url}: {extracted_text[:200]}...")
             return extracted_text
         raise HTTPException(status_code=500,detail={"message": "Error saving HTML to text","reason": str(e)})
     except Exception as e:

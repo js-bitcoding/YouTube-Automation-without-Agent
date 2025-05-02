@@ -3,7 +3,7 @@ from fastapi import HTTPException, Depends, status
 from functionality.jwt_token import decodeJWT
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from database.models import User
+from database.models import User, timezone
 from database.db_connection import get_db
 from utils.logging_utils import logger
 from sqlalchemy.exc import SQLAlchemyError
@@ -39,7 +39,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(jwt_bea
                 user = db.query(User).filter(User.id == user_id).first()
                 if user:
                     user.is_active = False
-                    user.logout_time = datetime.utcnow()
+                    user.logout_time = timezone
                     db.commit()
                     logger.info(f"User ID {user_id} marked inactive due to expired token.")
         except SQLAlchemyError as e:

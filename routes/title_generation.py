@@ -77,11 +77,10 @@ def get_user_titles(
 
         all_titles = []
         for row in rows:
-            # Assuming row.titles might be a serialized list (e.g., JSON)
             if isinstance(row.titles, list):
                 all_titles.extend(row.titles)
             else:
-                all_titles.append(row.titles)  # Assuming titles are a single string
+                all_titles.append(row.titles) 
 
         logger.info(f"User {user.id} has {len(all_titles)} generated titles.")
         return {"user_id": user.id, "generated_titles": all_titles}
