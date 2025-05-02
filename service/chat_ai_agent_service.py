@@ -1,34 +1,29 @@
+import os
 import datetime
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-# from langchain_community.vectorstores import FAISS
+from chromadb import Client
 from langchain_community.vectorstores import Chroma
+from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from database.models import Group, Document, YouTubeVideo, ChatConversation, ChatHistory, User,Instruction
+from langchain.schema import Document as LangchainDocument
+from database.models import Group, Document, YouTubeVideo, ChatConversation, ChatHistory, User, Instruction
 from utils.logging_utils import logger
 from config import OLLAMA_EMBEDDING_MODEL, OLLAMA_RESPONSE_MODEL
 
+# Setup
 llm = OLLAMA_RESPONSE_MODEL
+ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text")
+persist_dir = "./chroma_db"
+os.makedirs(persist_dir, exist_ok=True)
 
-ollama_embeddings = OLLAMA_EMBEDDING_MODEL
-
+# ---------------------------------------------
+# 1. Fetch group documents, video transcripts
+# ---------------------------------------------
 def fetch_group_data(group_ids: list, db: Session):
-    """
-    Retrieves and formats group documents and video transcripts with tone/style metadata.
-
-    Args:
-        group_ids (list): List of group IDs to fetch content for.
-        db (Session): SQLAlchemy DB session.
-
-    Returns:
-        dict: Contains formatted content, tones, styles, and raw documents.
-    """
-    formatted_sections = []
-    tone_set = set()
-    style_set = set()
-
-    documents = []
+    formatted_sections, tone_set, style_set, documents = [], set(), set(), []
+    
     for group_id in group_ids:
         try:
             group = db.query(Group).filter(Group.id == group_id).first()
@@ -39,33 +34,25 @@ def fetch_group_data(group_ids: list, db: Session):
             section = [f"\nGroup: {group.name or 'Unnamed Group'} (ID: {group.id})"]
 
             docs = db.query(Document).filter(Document.group_id == group_id).all()
-            logger.info(f"Found {len(docs)} documents in Group {group_id}")
             for doc in docs:
                 content = doc.content.strip().replace("\n", " ")
                 section.append(f"Document: {doc.filename}\n Full Content: {content}\n")
                 documents.append(doc.content)
 
             videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
-            logger.info(f"Found {len(videos)} videos in Group {group_id}")
             for video in videos:
                 transcript = video.transcript.strip().replace("\n", " ")
                 tone = video.tone or "Unknown"
                 style = video.style or "Unknown"
-
                 tone_set.add(tone.lower())
                 style_set.add(style.lower())
+                section.append(f"Video: {video.url}\n Transcript: {transcript}\n Tone: {tone}, Style: {style}\n")
 
-                section.append(
-                    f"Video: {video.url}\n Full Transcript: {transcript}\n"
-                    f"Tone: {tone.capitalize()}, Style: {style.capitalize()}\n"
-                )
-            
             if len(section) > 1:
                 formatted_sections.append("\n".join(section))
-                logger.debug(f"Formatted section for group {group_id}")
 
         except Exception as e:
-            logger.error(f"Error fetching data for group {group_id}: {str(e)}")
+            logger.error(f"Error fetching group {group_id}: {str(e)}")
             continue
 
     return {
@@ -75,201 +62,261 @@ def fetch_group_data(group_ids: list, db: Session):
         "documents": documents
     }
 
-# def initialize_faiss_store(documents: list):
-def initialize_chroma_store(documents: list):
+# ---------------------------------------------
+# 2. Initialize Chroma Vector Store
+# ---------------------------------------------
+
+def split_text_into_chunks(text: str, max_chunks: int = 10) -> list:
     """
-    Creates a FAISS vector store from chunked input documents.
+    Splits the input text into evenly sized chunks (by character count), preserving all content.
 
     Args:
-        documents (list): List of raw document strings.
+        text (str): The full input text.
+        max_chunks (int): The maximum number of chunks to return.
 
     Returns:
-        tuple: (vectorstore, all_chunks) used for similarity search.
+        list: A list of strings, each being a chunk of the input text.
     """
+    text = text.strip()
+    total_length = len(text)
+    chunk_size = total_length // max_chunks + (1 if total_length % max_chunks else 0)
+    return [text[i:i + chunk_size] for i in range(0, total_length, chunk_size)]
+
+
+def initialize_chroma_store(group_data: dict, collection_name: str):
     try:
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=100
-        )
+        
+        if "group_id" not in group_data:
+            logger.error("Missing 'group_id' in group_data")
+            raise ValueError("Missing 'group_id' in group_data")
+        
+        # Combine all text content
+        combined_documents = [group_data["formatted"]] + group_data["documents"]
+        combined_text = "\n\n".join(combined_documents)
 
-        all_chunks = []
-        for doc in documents:
-            chunks = splitter.create_documents([doc])
-            all_chunks.extend(chunks)
-            for i, chunk in enumerate(chunks):
-                logger.info(f"Chunk {i+1}: {chunk.page_content}")
+        # Split into max 10 chunks using equal size method
+        raw_chunks = split_text_into_chunks(combined_text, max_chunks=10)
+        all_chunks = [
+    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"]})
+    for chunk in raw_chunks
+]
 
-        # vectorstore = FAISS.from_documents(all_chunks, ollama_embeddings)
+        # Log chunk info and optionally test embeddings
+        for i, chunk in enumerate(all_chunks):
+            logger.info(f" Chunk {i+1}/{len(all_chunks)}: {len(chunk.page_content)} characters")
+            try:
+                embedding = ollama_embeddings.embed_documents([chunk.page_content])
+                if embedding and embedding[0]:
+                    logger.info(f" Embedded Chunk {i+1}: Vector Length = {len(embedding[0])}")
+                else:
+                    logger.warning(f" Empty embedding for Chunk {i+1}")
+            except Exception as e:
+                logger.error(f"Embedding error in Chunk {i+1}: {str(e)}")
+                raise
+
+        # Create and persist Chroma vector store
         vectorstore = Chroma.from_documents(
-            documents=all_chunks,
-            embedding=ollama_embeddings,
-            persist_directory="./chroma_db"
-        )
+    documents=all_chunks,
+    embedding=ollama_embeddings,
+    persist_directory=persist_dir,
+    collection_name=collection_name
+)
+
         vectorstore.persist()
-        logger.info(f"Vectorstore created with {len(all_chunks)} chunks.")
+        logger.info(f"✅ Chroma collection '{collection_name}' created and persisted successfully with {len(all_chunks)} chunks.")
+        return vectorstore, all_chunks, collection_name
 
-        return vectorstore, all_chunks
-    
     except Exception as e:
-        logger.error(f"Error initializing FAISS store: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error initializing FAISS store")
+        logger.error(f"Error initializing Chroma store: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error initializing Chroma store")
 
-def generate_response_from_prompt_and_data(group_data: str, user_prompt: str):
-    """
-    Uses LLM to generate a response based on provided group content and user prompt.
+# ---------------------------------------------
+# 3. Utility to Fetch VectorStore from ChromaDB
+# ---------------------------------------------
+def retrieve_vectorstore_from_chromadb(collection_name: str):
+    return Chroma(
+        collection_name=collection_name,
+        persist_directory=persist_dir,
+        embedding_function=ollama_embeddings
+    )
 
-    Args:
-        group_data (str): Contextual content (e.g., document or transcript).
-        user_prompt (str): User's input or question.
+# ---------------------------------------------
+# 4. Utility: Get ChromaDB Collection Name
+# ---------------------------------------------
+def get_chromadb_collection_name(group_ids, project_ids):
+    if group_ids and project_ids:
+        return f"project_{project_ids[0]}_group_{group_ids[0]}"
+    raise HTTPException(status_code=400, detail="Invalid group/project IDs")
 
-    Returns:
-        str: LLM-generated response.
-    """
-    try:
-        prompt = f"Here is some content:\n{group_data}\n\nNow, answer the following prompt:\n{user_prompt}"
-        response = llm.invoke(prompt)
-        return response
-    except Exception as e:
-        logger.error(f"Error generating response: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error generating response from LLM")
+# ---------------------------------------------
+# 5. Get Group + Project from Conversation
+# ---------------------------------------------
+def fetch_group_and_project_for_conversation(conversation_id: int, db: Session):
+    conversation = db.query(ChatConversation).filter(
+        ChatConversation.id == conversation_id,
+        ChatConversation.is_deleted == False
+    ).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="ChatConversation not found")
 
+    session = conversation.session
+    group_ids = [g.id for g in session.groups]
+    project_ids = [g.project_id for g in session.groups]
+
+    if not group_ids or not project_ids:
+        raise HTTPException(status_code=404, detail="Groups or Projects not found")
+
+    return group_ids, project_ids
+
+# ---------------------------------------------
+# 6. Main Response Generator Function
+# ---------------------------------------------
+
+from collections import defaultdict
+import re
+
+def format_chunks_for_prompt(all_chunks, group_id_map):
+    grouped_contents = defaultdict(set)
+
+    for chunk in all_chunks:
+        content = chunk.page_content.strip()
+        cleaned_content = re.sub(r"^Formatted content for .*?\n+", "", content, flags=re.IGNORECASE).strip()
+
+        # Deduplicate based on cleaned content
+        grouped_contents[chunk.metadata.get("group_id")].add(cleaned_content)
+
+    formatted = []
+    for group_id, contents in grouped_contents.items():
+        group_label = group_id_map.get(group_id, f"Group {group_id}" if group_id else "Unknown Group")
+
+        # Combine all unique contents for this group
+        group_text = "\n\n".join(sorted(contents))
+        formatted.append(f"Formatted content for {group_label}\n\n{group_text}")
+
+    return "\n\n---\n\n".join(formatted)
 
 def generate_response_for_conversation(conversation_id: int, user_prompt: str, db: Session, current_user: User):
-    """
-    Generates an AI assistant response for a specific chat conversation based on user input,
-    retrieved documents, chat history, and active instructions.
-
-    This function fetches the relevant chat conversation and associated groups, retrieves contextual
-    documents and video transcripts, and builds a full prompt including previous conversation history
-    and style/tone instructions. It then invokes an LLM to generate a context-aware response.
-
-    The assistant's response and user query are saved in the chat history.
-
-    Args:
-        conversation_id (int): The ID of the target chat conversation.
-        user_prompt (str): The new user message to generate a response for.
-        db (Session): SQLAlchemy database session for querying and saving data.
-        current_user (User): The authenticated user initiating the request.
-
-    Returns:
-        JSONResponse: A JSON-formatted response containing the assistant's reply, chat history,
-                      used styles and tones, and metadata about the conversation.
-
-    Raises:
-        HTTPException: If the chat conversation is not found, no group content is available,
-                       or the LLM invocation fails.
-    """
     try:
-        conversation = db.query(ChatConversation).filter(
-            ChatConversation.id == conversation_id,
-            ChatConversation.is_deleted == False
-        ).first()
-        if not conversation:
-            raise HTTPException(status_code=404, detail="ChatConversation not found")
+        # Check if it's a greeting
+        if user_prompt.lower().strip() in ['hi', 'hello', 'hey', 'how are you']:
+            response = "Hello! How can I assist you today?"
+            return JSONResponse(content={
+                "response": response,
+                "conversation_id": conversation_id,
+                "user_message": user_prompt,
+                "assistant_message": response,
+                "history": []
+            })
 
-        chat_session = conversation.session
-        group_ids = [group.id for group in chat_session.groups]
+        # Fetch metadata
+        group_ids, project_ids = fetch_group_and_project_for_conversation(conversation_id, db)
         group_info = fetch_group_data(group_ids, db)
-        if not group_info["formatted"]:
-            raise HTTPException(status_code=404, detail="No content available for this chat")
+        # collection_name = get_chromadb_collection_name(group_ids, project_ids)
+        # vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
+        # search_results = vectorstore.similarity_search(user_prompt, k=5)
+        all_chunks = []
 
-        # vectorstore, all_chunks = initialize_faiss_store(group_info["documents"])
-        vectorstore, all_chunks = initialize_chroma_store(group_info["documents"])
+        for group_id in group_ids:
+            collection_name = f"project_{project_ids[0]}_group_{group_id}"
+            try:
+                vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
+                chunks = vectorstore.similarity_search(user_prompt, k=20)
 
-        max_chunks = 10
-        chunked_text = "\n\n".join([chunk.page_content for chunk in all_chunks[:max_chunks]])
+        # Log chunks before formatting
+                for chunk in chunks:
+                    print(f"Raw chunk content: {chunk.page_content[:200]}...")  # Debugging first 200 characters
 
+                all_chunks.extend(chunks)
+            except Exception as e:
+                logger.warning(f"Could not retrieve vectorstore for {collection_name}: {e}")
+
+        group_id_map = {group_id: f"Group {i+1}" for i, group_id in enumerate(group_ids)}
+
+        formatted_chunks = format_chunks_for_prompt(all_chunks,group_id_map)
+        # Chat history
         history_records = db.query(ChatHistory).filter(
-            ChatHistory.chat_conversation_id == conversation.id,
+            ChatHistory.chat_conversation_id == conversation_id,
             ChatHistory.is_deleted == False
         ).order_by(ChatHistory.created_at.asc()).all()
 
-        instructions = db.query(Instruction).filter(
-            Instruction.is_deleted == False,
-            Instruction.is_activate == True
-        ).all()
+        history_prompt = "\n".join([f"User: {h.query}\nAssistant: {h.response}" for h in history_records])
 
-        history_prompt = ""
-        for record in history_records:
-            history_prompt += f"User: {record.query}\n"
-            history_prompt += f"Assistant: {record.response}\n"
+        # Active instructions
+        instructions = db.query(Instruction).filter(Instruction.is_deleted == False, Instruction.is_activate == True).all()
+        instructions_info = "\n".join([f"Instruction: {instr.content}" for instr in instructions])
+        print("Formated Chunks",formatted_chunks)
+        # System Prompt
+        system_prompt = f"""
+You are a highly capable and context-aware assistant helping a user with information from documents, videos, and previous conversations. Use the instructions and retrieved knowledge to respond in a helpful, clear, and tone-adaptive manner.
 
-        search_results = vectorstore.similarity_search(user_prompt, k=3)
+##  Primary Context (Documents & Video Transcripts):
+The following is background information from the user’s selected groups. Use it to understand the broader context, tone, and style. Incorporate relevant information, but do not repeat it verbatim unless directly relevant.
+{formatted_chunks}
 
-        retrieved_data = "\n\n".join([result.page_content for result in search_results])
-        instructions_info = "\n".join([f" Instruction: {instr.content}" for instr in instructions])
-        logger.info("Group Info",group_info)
-        logger.info("Retrieve Data",retrieved_data)
+## Tones:
+{", ".join(group_info["tones"]).capitalize() or "Neutral"}
 
-        full_prompt = f"""
-            You are a highly capable and context-aware assistant helping a user with information from documents, videos, and previous conversations. Use the instructions and retrieved knowledge to respond in a helpful, clear, and tone-adaptive manner.
+## Styles:
+{", ".join(group_info["styles"]).capitalize() or "Plain"}
 
-            ##  Active User Instructions:
-            {instructions_info or "None provided."}
+## Chat History:
+{history_prompt}
 
-            ##  Primary Context (Documents & Video Transcripts):
-            The following is background information from the user’s selected groups. Use it to understand the broader context, tone, and style. Incorporate relevant information, but do not repeat it verbatim unless directly relevant.
+## Instructions:
+{instructions_info}
 
-            {group_info["formatted"]}
+## User Prompt:
+{user_prompt}
 
-            These are raw extracted chunks from your documents, chunked for better context understanding.
-            {chunked_text}
+## Assistant Response:
+"""
 
-            ##  Communication Style Guidance:
-            The content involves various tones and styles:
-            - Tones: {", ".join(group_info["tones"]).capitalize() or "Neutral"}
-            - Styles: {", ".join(group_info["styles"]).capitalize() or "Plain"}
+        # Generate response
+        response = llm.invoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ])
 
-            Match your response tone and style to align with these.
-
-            ##  Chat History:
-            Maintain conversational continuity. Refer to prior user and assistant messages as needed.
-
-            {history_prompt}
-
-            ## 📩 User Prompt:
-            {user_prompt}
-
-            ## 🤖 Assistant Response:
-            """
-
-        response = llm.invoke(full_prompt)
-
+        # Save to DB
         new_chat = ChatHistory(
             query=user_prompt.strip(),
             response=response.strip(),
             context=group_info,
-            chat_conversation_id=conversation.id,
+            chat_conversation_id=conversation_id,
             user_id=current_user.id
         )
         db.add(new_chat)
         db.commit()
 
+        # Build history for UI
+        history_ui = [
+            {
+                "sender": "User",
+                "message": h.query,
+                "response": h.response,
+                "timestamp": h.created_at.isoformat()
+            }
+            for h in history_records if h.query
+        ] + [{
+            "sender": "User",
+            "message": user_prompt.strip(),
+            "response": response.strip(),
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }]
+
         return JSONResponse(content={
             "response": response.strip(),
             "conversation_id": conversation_id,
-            "user_message": user_prompt.strip(),
+            "user_message": user_prompt,
             "assistant_message": response.strip(),
             "based_on_groups": group_ids,
-            "tone_used": ", ".join([tone.capitalize() for tone in group_info["tones"]]) if group_info["tones"] else "",
-            "style_used": ", ".join([style.capitalize() for style in group_info["styles"]]) if group_info["styles"] else "",
-            "history": [
-                {
-                    "sender": "User",
-                    "message": h.query,
-                    "response": h.response,
-                    "timestamp": h.created_at.isoformat()
-                }
-                for h in history_records if h.query
-            ] + [
-                {
-                    "sender": "User",
-                    "message": user_prompt.strip(),
-                    "response": response.strip(),
-                    "timestamp": datetime.datetime.utcnow().isoformat()
-                }
-            ]
+            "tone_used": ", ".join([t.capitalize() for t in group_info["tones"]]),
+            "style_used": ", ".join([s.capitalize() for s in group_info["styles"]]),
+            "history": history_ui
         })
+
     except Exception as e:
-        logger.error(f"Error in generate_response_for_conversation: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+

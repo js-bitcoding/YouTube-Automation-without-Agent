@@ -28,13 +28,13 @@ def get_all_conversations(db: Session = Depends(get_db), current_user: User = De
 
         if not get_all_cov:
             logger.warning(f"No conversations found for User ID {current_user.id}")
-            raise HTTPException(status_code=400, detail="No Conversation Found")
+            raise HTTPException(status_code=400, detail="No Conversation Found Or Create New Conversation")
 
         logger.info(f"{len(get_all_cov)} conversations retrieved for User ID {current_user.id}")
         return get_all_cov
     except Exception as e:
         logger.exception(f"Error retrieving conversations for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="No Conversation Found")
 
 
 @chat_router.post("/create/")

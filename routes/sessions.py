@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
 from database.db_connection import get_db
 from functionality.current_user import get_current_user
-from database.models import User, Group, ChatConversation, ChatSession, chat_session_group
+from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
 from utils.logging_utils import logger
 
 sessions_router = APIRouter(prefix="/Session")
@@ -124,10 +124,23 @@ def create_session_api(
 
         groups = db.query(Group).filter(Group.id.in_(unique_group_ids), Group.user_id == current_user.id).all()
 
+        valid_group_ids = {group.id for group in groups}
+        invalid_group_ids = set(unique_group_ids) - valid_group_ids
+
+        if invalid_group_ids:
+            logger.warning(f"Invalid group IDs for User ID {current_user.id}: {invalid_group_ids}")
+            raise HTTPException(
+        status_code=400,
+        detail=f"Invalid group IDs: {list(invalid_group_ids)}"
+        )
+
         if not groups:
             logger.warning(f"No valid groups found for User ID {current_user.id}")
             raise HTTPException(status_code=400, detail="No valid groups found for the user")
-
+        active_instruction = db.query(Instruction).filter(
+        Instruction.is_activate == True,
+        Instruction.is_deleted == False
+        ).first()
         chat_session = ChatSession(
             name=name,
         )
@@ -141,6 +154,8 @@ def create_session_api(
         chat_conversation = ChatConversation(
             name=name,
             chat_session_id=chat_session.id,
+            instruction_id=active_instruction.id if active_instruction else None
+
         )
         db.add(chat_conversation)
         db.commit()
@@ -155,11 +170,11 @@ def create_session_api(
 
     except HTTPException as e:
         logger.exception(f"Failed to Create session : {e}")
+        raise e
 
     except Exception as e:
         logger.exception(f"Failed to create chat session for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: Failed to create session.")
-
 
 @sessions_router.delete("/delete/")
 def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

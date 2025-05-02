@@ -73,9 +73,9 @@ async def process_group_content(
 
             if not file.filename.endswith((".pdf", ".docx", ".txt")):
                 results["documents"].append({
-                    "filename": file.filename,
-                    "error": "Unsupported file type. Only PDF, DOCX, and TXT are allowed."
-                })
+                "filename": file.filename,
+                "error": "Unsupported file type. Only PDF, DOCX, and TXT are allowed."
+            })
                 continue
 
             try:
@@ -83,32 +83,42 @@ async def process_group_content(
                 filename = f"{timestamp}_{file.filename}"
                 file_path = os.path.join(UPLOAD_FOLDER, filename)
 
+                print("file_path :: ", file_path)
+            # Save the file
                 with open(file_path, "wb") as f:
+                    print("file type : ", type(file))   
                     content = await file.read()
                     f.write(content)
 
-                extracted_text = extract_text_from_file(file_path)
+                logger.info(f"Extracting text from file {file.filename}")
+
+            # Pass the file (UploadFile) directly to the extractor function
+                await file.seek(0)
+                extracted_text = await extract_text_from_file(file)
+            
+                logger.info(f"Text extracted from file {file.filename}: {len(extracted_text)} characters")
+
                 cleaned_text = " ".join(extracted_text.split())
 
                 doc_entry = Document(
-                    filename=file.filename,
-                    content=cleaned_text,
-                    group_id=group_id
+                filename=file.filename,
+                content=cleaned_text,
+                group_id=group_id
                 )
                 db.add(doc_entry)
                 db.commit()
                 db.refresh(doc_entry)
 
                 results["documents"].append({
-                    "filename": file.filename,
-                    "message": "Uploaded and extracted successfully"
+                "filename": file.filename,
+                "message": "Uploaded and extracted successfully"
                 })
             except Exception as e:
                 logger.error(f"Error processing document {file.filename}: {e}")
                 results["documents"].append({
-                    "filename": file.filename,
-                    "error": f"Failed to process document: {str(e)}"
-                })
+                "filename": file.filename,
+                "error": f"Failed to process document: {str(e)}"
+            })
 
     if youtube_links:
         for link in youtube_links:

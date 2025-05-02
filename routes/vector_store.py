@@ -1,67 +1,54 @@
-import os
-from functionality.current_user import get_current_user
-from utils.logging_utils import setup_logging
-from utils.file_processing import  save_base64_file
-from fastapi import APIRouter, Depends, HTTPException
-from database.schemas import VectorDataStoreRequest
-from handlers.chromadb_handlers import handle_check_filename_exists, handle_add_embedding
+from fastapi import APIRouter, HTTPException
+from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
+from utils.logging_utils import logger
+from pydantic import BaseModel
+from typing import List, Optional
 
-logger = setup_logging()
+class CollectionResponseModel(BaseModel):
+    ids: List[str]
+    embeddings: Optional[List[List[float]]]
+    documents: List[str]
+    uris: Optional[List[str]] = None
+    data: Optional[List[str]] = None
+    metadatas: List[Optional[dict]]
+    included: List[str]
 
 router = APIRouter()
 
-@router.post("/vector_data_store")
-async def store_vector_data(
-    request: VectorDataStoreRequest, 
-    user: dict = Depends(get_current_user)
-    ):
-    """
-    Stores a document as a vector embedding and uploads it to a storage system.
-
-    Args:
-        request (VectorDataStoreRequest): Request object containing the document (Base64), filename, collection name, username, and summary.
-        user (dict, optional): Authenticated user information retrieved via dependency injection.
-
-    Returns:
-        dict: A dictionary containing:
-            - "message" (str): Confirmation that the document was stored successfully.
-            - "filename" (str): The name of the stored document.
-            - "collection_name" (str): The collection where the document was stored.
-
-    Raises:
-        HTTPException: If file processing, uploading, or embedding creation fails.
-    """
-
-    summary = request.summary
+def get_chroma_connection(collection_name: str):
     try:
-        if handle_check_filename_exists(request.filename, request.collection_name, request.username):
-            logger.warning(f"File {request.filename} already exists in collection {request.collection_name}")
- 
-        success = save_base64_file(request.document, request.filename)        
-        if not success:
-                raise HTTPException(status_code=500,detail={"message": "File processing failed","reason": "Failed to save base64 file"})  
-        try:
-            file_extension = os.path.splitext(request.filename)[1].lower().lstrip(".")
- 
-            response = handle_add_embedding(request.filename, file_extension, request.collection_name, request.username, summary)
- 
-            if "error" in response:
-                raise HTTPException(status_code=500,detail={"message": "Embedding creation failed","reason": response["error"]})
-        except HTTPException as e:
-                raise e
-        except Exception as e:
-            logger.error(f"Error adding embedding to file {request.filename} in collection {request.collection_name}: {str(e)}")
-            raise HTTPException(status_code=500,detail={"message": "Embedding creation failed","reason": str(e)})
-        os.remove(request.filename)
-        return {
-            "message": "Document stored successfully",
-            "filename": request.filename,
-            "collection_name": request.collection_name
-        }
- 
-    except Exception as e:
-        logger.error(f"Failed to store document: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail={"message": "Failed to store document", "reason": str(e)}
+        ollama_embedding_model = "nomic-embed-text"
+        vectorstore = Chroma(
+            collection_name=collection_name,
+            persist_directory="./chroma_db",
+            embedding_function=OllamaEmbeddings(model=ollama_embedding_model)
         )
+        return vectorstore
+    except Exception as e:
+        logger.error(f"Error connecting to Chroma DB: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error connecting to ChromaDB")
+
+@router.get("/collections/{project_id}/{group_id}", response_model=CollectionResponseModel)
+async def fetch_collection_by_group(project_id: int, group_id: int):
+    try:
+        collection_name = f"project_{project_id}_group_{group_id}"
+        vectorstore = get_chroma_connection(collection_name)
+        collection = vectorstore._collection.get()
+
+        if not collection or not collection.get('ids'):
+            logger.error(f"No data found for collection: {collection_name}")
+            raise HTTPException(status_code=404, detail=f"Collection {collection_name} not found.")
+
+        return CollectionResponseModel(
+            ids=collection.get('ids', []),
+            embeddings=collection.get('embeddings', []),
+            documents=collection.get('documents', []),
+            uris=collection.get('uris', []),
+            data=collection.get('data', []),
+            metadatas=collection.get('metadatas', []),
+            included=collection.get('included', [])
+        )
+    except Exception as e:
+        logger.error(f"Error fetching collection for project {project_id} and group {group_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching collection from ChromaDB")

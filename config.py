@@ -16,5 +16,6 @@ GENERATED_AUDIO_PATH = os.getenv("GENERATED_AUDIO_PATH")
 VOICE_TONE_DIR = os.getenv("VOICE_TONE_DIR")
 UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
 
-OLLAMA_EMBEDDING_MODEL = OllamaEmbeddings(model=OLLAMA_MODEL)
+OLLAMA_EMBEDDING_MODEL = OllamaEmbeddings(model="nomic-embed-text")
+
 OLLAMA_RESPONSE_MODEL = OllamaLLM(model="tinyllama:1.1b")

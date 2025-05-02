@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.db_connection import init_db, engine, Base
-from routes import thumbnail, viral_idea_finder, title_generation, group, chat, project, instructions, admin, sessions, auth, collections, files, vector_store
+from routes import thumbnail, viral_idea_finder, title_generation, group, chat, project, instructions, admin, sessions, auth, vector_store
 
 Base.metadata.create_all(bind=engine)
 
@@ -40,9 +40,5 @@ app.include_router(sessions.sessions_router, tags=["Sessions"])
 app.include_router(chat.chat_router, tags=["AI Chat"])
 
 app.include_router(instructions.instruction_router, tags=["Instructions"])
-
-app.include_router(collections.collection_router, tags=["Collections"])
-
-app.include_router(files.file_router, tags=["Files"])
 
 app.include_router(vector_store.router, tags=["Vector Store"])

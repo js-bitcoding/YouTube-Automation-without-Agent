@@ -78,7 +78,6 @@ class DeleteAllCollectionDataRequest(BaseModel):
 
 class VectorDataStoreRequest(BaseModel):
     collection_name: Union[str, List[str]]
-    username: str
     filename: str
     document: str  
     summary: Optional[str] = None

@@ -117,14 +117,14 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
 
         token = create_jwt_token({"user_id": user.id})
         logger.info(f"User {user.username} logged in successfully.")
-        return JSONResponse(status_code=201, content={"token": token, "message": "✅ Login successful!"})
+        return JSONResponse(status_code=201, content={"token": token, "message": "✅ Login successful! Now You Can Explore It !"})
     except SQLAlchemyError:
         db.rollback()
         logger.exception("Login failed due to DB error.")
         raise HTTPException(status_code=500, detail="⚠️ Login failed due to server error.")
     except Exception:
         logger.exception("Unexpected error during login.")
-        raise HTTPException(status_code=500, detail="Unexpected error during login.")
+        raise HTTPException(status_code=500, detail="Password or Username Must be Valid")
 
 
 @router.post("/logout")

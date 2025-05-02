@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import wave
@@ -680,67 +681,115 @@ def get_user_voice_sample(user_id: int) -> str:
         # Catch any other unexpected exceptions
         return f"An unexpected error occurred: {e}"
 
-def extract_text_from_file(file_path: str) -> str:
+# def extract_text_from_file(file_path: str) -> str:
+#     """
+#     Extracts text from various file formats.
+
+#     Args:
+#         file_path (str): Path to the file to extract text from.
+
+#     Returns:
+#         str: Extracted text from the file.
+#     """
+#     try:
+#         if not os.path.exists(file_path):
+#             raise FileNotFoundError(f"File not found: {file_path}")
+
+#         if file_path.endswith(".pdf"):
+#             return extract_text_from_pdf(file_path)
+#         elif file_path.endswith(".docx"):
+#             return extract_text_from_docx(file_path)
+#         elif file_path.endswith(".txt"):
+#             with open(file_path, "r", encoding="utf-8") as f:
+#                 return f.read()
+#         else:
+#             raise ValueError("Unsupported file format. Only .pdf, .docx, and .txt files are supported.")
+#     except FileNotFoundError as e:
+#         return f"Error: {str(e)}"
+#     except ValueError as e:
+#         return f"Error: {str(e)}"
+#     except Exception as e:
+#         return f"An unexpected error occurred: {str(e)}"
+
+# def extract_text_from_pdf(file_path: str) -> str:
+#     """
+#     Extracts text from a PDF file.
+
+#     Args:
+#         file_path (str): Path to the PDF file.
+
+#     Returns:
+#         str: Extracted text from the PDF file.
+#     """
+#     try:
+#         reader = PdfReader(file_path)
+#         text = ""
+#         for page in reader.pages:
+#             text += page.extract_text() + "\n"
+#         return text.strip() if text else "No text found in the PDF."
+#     except Exception as e:
+#         return f"Error extracting text from PDF: {str(e)}"
+    
+# def extract_text_from_docx(file_path: str) -> str:
+#     """
+#     Extracts text from a DOCX file.
+
+#     Args:
+#         file_path (str): Path to the DOCX file.
+
+#     Returns:
+#         str: Extracted text from the DOCX file.
+#     """
+#     try:
+#         doc = DocxDocument(file_path)
+#         text = "\n".join([para.text for para in doc.paragraphs])
+#         return text.strip() if text else "No text found in the DOCX."
+#     except Exception as e:
+#         return f"Error extracting text from DOCX: {str(e)}"
+
+async def extract_text_from_file(upload_file: UploadFile) -> str:
     """
-    Extracts text from various file formats.
+    Extracts text from UploadFile (not file path).
 
     Args:
-        file_path (str): Path to the file to extract text from.
+        upload_file (UploadFile): Uploaded file to extract text from.
 
     Returns:
-        str: Extracted text from the file.
+        str: Extracted text.
     """
     try:
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        if file_path.endswith(".pdf"):
-            return extract_text_from_pdf(file_path)
-        elif file_path.endswith(".docx"):
-            return extract_text_from_docx(file_path)
-        elif file_path.endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read()
+        # This should read the file as a byte stream (which the UploadFile class supports)
+        print("upload_file :: ", type(upload_file))
+        contents = await upload_file.read()
+        print("after contents")
+        logger.debug(f"File {upload_file.filename} read, size: {len(contents)} bytes")
+        
+        if upload_file.filename.endswith(".pdf"):
+            return extract_text_from_pdf(contents)
+        elif upload_file.filename.endswith(".docx"):
+            return extract_text_from_docx(contents)
+        elif upload_file.filename.endswith(".txt"):
+            return contents.decode("utf-8")  # Convert byte stream to string
         else:
             raise ValueError("Unsupported file format. Only .pdf, .docx, and .txt files are supported.")
-    except FileNotFoundError as e:
-        return f"Error: {str(e)}"
-    except ValueError as e:
-        return f"Error: {str(e)}"
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
-def extract_text_from_pdf(file_path: str) -> str:
-    """
-    Extracts text from a PDF file.
-
-    Args:
-        file_path (str): Path to the PDF file.
-
-    Returns:
-        str: Extracted text from the PDF file.
-    """
+def extract_text_from_pdf(file_bytes: bytes) -> str:
     try:
-        reader = PdfReader(file_path)
+        reader = PdfReader(io.BytesIO(file_bytes))
         text = ""
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
         return text.strip() if text else "No text found in the PDF."
     except Exception as e:
         return f"Error extracting text from PDF: {str(e)}"
-    
-def extract_text_from_docx(file_path: str) -> str:
-    """
-    Extracts text from a DOCX file.
 
-    Args:
-        file_path (str): Path to the DOCX file.
-
-    Returns:
-        str: Extracted text from the DOCX file.
-    """
+def extract_text_from_docx(file_bytes: bytes) -> str:
     try:
-        doc = DocxDocument(file_path)
+        doc = DocxDocument(io.BytesIO(file_bytes))
         text = "\n".join([para.text for para in doc.paragraphs])
         return text.strip() if text else "No text found in the DOCX."
     except Exception as e:

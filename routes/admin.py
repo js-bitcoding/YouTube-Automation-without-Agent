@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 admin_router = APIRouter()
 
-@admin_router.get("/user_count/", response_model=UserCountResponse)
+@admin_router.get("/active_users/", response_model=UserCountResponse)
 def get_user_count(db: Session = Depends(get_db), _: User = Depends(admin_only)):
     """
     Returns the total count and list of all active (non-deleted) users.
