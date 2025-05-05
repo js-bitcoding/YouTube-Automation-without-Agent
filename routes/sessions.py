@@ -1,10 +1,11 @@
+from typing import List,Optional
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List
+from sqlalchemy.orm import joinedload
+from utils.logging_utils import logger
 from database.db_connection import get_db
 from functionality.current_user import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query
 from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
-from utils.logging_utils import logger
 
 sessions_router = APIRouter(prefix="/Session")
 
@@ -25,7 +26,9 @@ def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends
             - If no chat sessions are found for the user.
     """
     try:
-        sessions = db.query(ChatSession).join(chat_session_group).join(Group).filter(
+        sessions = db.query(ChatSession).join(chat_session_group).join(Group).options(
+            joinedload(ChatSession.conversations)  # Correct relationship name
+        ).filter(
             Group.user_id == current_user.id,
             ChatSession.is_deleted == False
         ).all()
@@ -35,7 +38,32 @@ def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends
             raise HTTPException(status_code=404, detail="⚠️ No chat sessions found for this user.")
         
         logger.info(f"{len(sessions)} chat sessions retrieved for User ID {current_user.id}.")
-        return sessions
+        return [
+    {
+        "id": session.id,
+        "name": session.name,
+        "updated_at": session.updated_at,
+        "associated_groups": [
+    {
+        "id": group.id,
+        "name": group.name,
+        **({"created_at": group.created_at} if hasattr(group, "created_at") else {}),
+        "updated_at": group.updated_at
+    }
+    for group in session.groups
+],
+
+        "conversations": [
+            {
+                "id": convo.id,
+                "name": convo.name,
+                "created_at": convo.created_at
+            }
+            for convo in session.conversations if not convo.is_deleted
+        ]
+    }
+    for session in sessions
+]
 
     except Exception as e:
         logger.exception(f"Failed to retrieve chat sessions for User ID {current_user.id}: {e}")
@@ -50,18 +78,6 @@ def get_session_by_id(
 ):
     """
     Retrieves a specific chat session by its ID for the authenticated user.
-
-    Args:
-        session_id (int): The ID of the chat session to retrieve.
-        db (Session): SQLAlchemy DB session.
-        current_user (User): The authenticated user making the request.
-
-    Returns:
-        ChatSession: The chat session associated with the specified ID.
-
-    Raises:
-        HTTPException:
-            - If the chat session is not found or does not belong to the user.
     """
     try:
         session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
@@ -75,13 +91,23 @@ def get_session_by_id(
             raise HTTPException(status_code=404, detail="⚠️ Chat session not found for this user.")
         
         logger.info(f"Chat session with ID {session_id} retrieved for User ID {current_user.id}.")
-        return session
+
+        return {
+            "session_id": session.id,
+            "name": session.name,
+            "created_at": session.created_at,
+            "updated_at": session.updated_at,
+            "conversations": [
+                {
+                    "conversation_id": conv.id,
+                    "conversation_name": conv.name
+                } for conv in session.conversations
+            ]
+        }
 
     except Exception as e:
         logger.exception(f"Failed to retrieve chat session {session_id} for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch session.")
-
-
 
 @sessions_router.post("/create/")
 def create_session_api(
@@ -211,3 +237,97 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
     except Exception as e:
         logger.exception(f"Failed to delete session {session_id} for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: Failed to delete session.")
+    
+
+
+@sessions_router.put("/update/{session_id}/")
+def update_session_api(
+    session_id: int,
+    name: Optional[str] = Query(default=None),
+    group_ids: Optional[List[int]] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates the name and/or group associations of a chat session.
+
+    Args:
+        session_id (int): ID of the chat session to update.
+        name (Optional[str]): New name for the session (if provided).
+        group_ids (Optional[List[int]]): New group IDs to associate (if provided).
+        db (Session): SQLAlchemy DB session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        dict: Updated session info.
+
+    Raises:
+        HTTPException: On unauthorized access or invalid input.
+    """
+    try:
+        session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
+            ChatSession.id == session_id,
+            Group.user_id == current_user.id,
+            ChatSession.is_deleted == False
+        ).first()
+
+        if not session:
+            logger.warning(f"Session ID {session_id} not found for User ID {current_user.id}.")
+            raise HTTPException(status_code=404, detail="Chat session not found.")
+
+        updated = False
+
+        # Update name if provided
+        if name is not None:
+            name = name.strip()
+            if not name:
+                raise HTTPException(status_code=422, detail="Chat session name cannot be empty.")
+            session.name = name
+            updated = True
+
+        # Update groups if provided
+        if group_ids is not None:
+            if not all(isinstance(gid, int) for gid in group_ids):
+                raise HTTPException(status_code=422, detail="All group IDs must be integers.")
+            
+            unique_group_ids = list(set(group_ids))
+            groups = db.query(Group).filter(Group.id.in_(unique_group_ids), Group.user_id == current_user.id).all()
+            valid_group_ids = {g.id for g in groups}
+            invalid_group_ids = set(unique_group_ids) - valid_group_ids
+
+            if invalid_group_ids:
+                raise HTTPException(status_code=400, detail=f"Invalid group IDs: {list(invalid_group_ids)}")
+
+            session.groups.clear()
+            session.groups.extend(groups)
+            updated = True
+
+        if updated:
+            db.commit()
+            db.refresh(session)
+            logger.info(f"Session ID {session_id} updated by User ID {current_user.id}.")
+        else:
+            logger.info(f"No update fields provided for session ID {session_id} by User ID {current_user.id}.")
+
+        return {
+            "id": session.id,
+            "name": session.name,
+            "updated_at": session.updated_at,
+            "associated_group_ids": [g.id for g in session.groups],
+            "conversations": [
+                {
+                    "id": convo.id,
+                    "name": convo.name,
+                    "created_at": convo.created_at
+                }
+                for convo in session.conversations if not convo.is_deleted
+            ]
+        }
+
+    except HTTPException as e:
+        logger.exception(f"HTTP error during update of session {session_id}: {e}")
+        raise e
+
+    except Exception as e:
+        logger.exception(f"Unexpected error updating session {session_id} for User ID {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to update session.")

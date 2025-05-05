@@ -8,6 +8,9 @@ class UserRegister(BaseModel):
     password: str 
     email_id : EmailStr
     
+class SaveVideoRequest(BaseModel):
+    note: Optional[str] = None
+    
 class VideoSaveRequest(BaseModel):
     video_id: str
     title: str
@@ -82,3 +85,12 @@ class VectorDataStoreRequest(BaseModel):
     document: str  
     summary: Optional[str] = None
     metadata: Optional[dict] = None
+
+class CollectionResponseModel(BaseModel):
+    ids: List[str]
+    embeddings: Optional[List[List[float]]]
+    documents: List[str]
+    uris: Optional[List[str]] = None
+    data: Optional[List[str]] = None
+    metadatas: List[Optional[dict]]
+    included: List[str]

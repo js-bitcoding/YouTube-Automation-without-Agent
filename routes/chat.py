@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session,joinedload
 from fastapi import APIRouter, Depends ,HTTPException
-from database.models import User, Group, ChatConversation, ChatSession, chat_session_group
+from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
 from service.chat_ai_agent_service import generate_response_for_conversation
 from database.db_connection import get_db
 from functionality.current_user import get_current_user
@@ -69,7 +69,12 @@ def create_conversation(
         if not name or len(name.strip()) == 0:
             raise HTTPException(status_code=400, detail="Conversation name is required and cannot be empty")
 
-        conversation = ChatConversation(name=name, chat_session_id=session_id)
+        active_instruction = db.query(Instruction).filter(
+            Instruction.is_activate == True,
+            Instruction.is_deleted == False
+        ).first()
+
+        conversation = ChatConversation(name=name, chat_session_id=session_id,instruction_id=active_instruction.id if active_instruction else None)
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
@@ -78,7 +83,7 @@ def create_conversation(
         return conversation
     except Exception as e:
         logger.exception(f"Error creating conversation for Session ID {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error while create conversation for the session {e}")
 
 @chat_router.put("/update/{conversation_id}/")
 def update_conversation_name(
@@ -119,7 +124,7 @@ def update_conversation_name(
         return {"message": "Conversation name updated"}
     except Exception as e:
         logger.exception(f"Error updating conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error while updating Conversation")
 
 
 @chat_router.get("/get/{conversation_id}/")
@@ -170,7 +175,7 @@ def get_conversation_by_id(
         }
     except Exception as e:
         logger.exception(f"Error retrieving conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error while retrieving conversation ID")
 
 @chat_router.delete("/delete/{conversation_id}/")
 def delete_conversation(
@@ -205,7 +210,7 @@ def delete_conversation(
         return {"message": "Conversation deleted"}
     except Exception as e:
         logger.exception(f"Error deleting conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error while deleting conversation ID")
 
 
 @chat_router.post("/generate_group_response")
@@ -235,4 +240,4 @@ def generate_group_response(
         return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
     except Exception as e:
         logger.exception(f"Error generating response for Conversation ID {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error while generating the response")

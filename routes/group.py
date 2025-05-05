@@ -84,7 +84,7 @@ async def create_empty_group(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error while creating group for project ID {project_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error while creating group for project ID")
 
 @group_router.put("/{group_id}/")
 def update_group_api(
@@ -126,7 +126,7 @@ def update_group_api(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error while updating group {group_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error while updating group")
     
 @group_router.put("/update-content")
 async def update_group_content(
@@ -236,7 +236,7 @@ async def update_group_content(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating content for group {group_id} under project {project_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error error updating content for group {group_id} under project {project_id}")
     
 @group_router.delete("/delete-content")
 async def delete_group_content(

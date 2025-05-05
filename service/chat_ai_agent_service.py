@@ -1,9 +1,358 @@
+# import os
+# import datetime
+# from fastapi import HTTPException
+# from fastapi.responses import JSONResponse
+# from sqlalchemy.orm import Session
+# from chromadb import Client
+# from chromadb.config import Settings
+# from langchain_community.vectorstores import Chroma
+# from langchain_ollama import OllamaLLM, OllamaEmbeddings
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain.schema import Document as LangchainDocument
+# from database.models import Group, Document, YouTubeVideo, ChatConversation, ChatHistory, User, Instruction
+# from utils.logging_utils import logger
+# from config import OLLAMA_EMBEDDING_MODEL, OLLAMA_RESPONSE_MODEL
+
+# # Setup
+# llm = OLLAMA_RESPONSE_MODEL
+# ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text")
+# persist_dir = "./chroma_db"
+# os.makedirs(persist_dir, exist_ok=True)
+
+# # ---------------------------------------------
+# # 1. Fetch group documents, video transcripts
+# # ---------------------------------------------
+# def fetch_group_data(group_ids: list, db: Session):
+#     formatted_sections, tone_set, style_set, documents = [], set(), set(), []
+    
+#     for group_id in group_ids:
+#         try:
+#             group = db.query(Group).filter(Group.id == group_id).first()
+#             if not group:
+#                 logger.warning(f"Group with ID {group_id} not found.")
+#                 continue
+
+#             section = [f"\nGroup: {group.name or 'Unnamed Group'} (ID: {group.id})"]
+
+#             docs = db.query(Document).filter(Document.group_id == group_id).all()
+#             for doc in docs:
+#                 content = doc.content.strip().replace("\n", " ")
+#                 section.append(f"Document: {doc.filename}\n Full Content: {content}\n")
+#                 documents.append(doc.content)
+
+#             videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
+#             for video in videos:
+#                 transcript = video.transcript.strip().replace("\n", " ")
+#                 tone = video.tone or "Unknown"
+#                 style = video.style or "Unknown"
+#                 tone_set.add(tone.lower())
+#                 style_set.add(style.lower())
+#                 section.append(f"Video: {video.url}\n Transcript: {transcript}\n Tone: {tone}, Style: {style}\n")
+
+#             if len(section) > 1:
+#                 formatted_sections.append("\n".join(section))
+
+#         except Exception as e:
+#             logger.error(f"Error fetching group {group_id}: {str(e)}")
+#             continue
+
+#     return {
+#         "formatted": "\n\n".join(formatted_sections),
+#         "tones": list(tone_set),
+#         "styles": list(style_set),
+#         "documents": documents
+#     }
+
+# # ---------------------------------------------
+# # 2. Initialize Chroma Vector Store
+# # ---------------------------------------------
+
+# def split_text_into_chunks(text: str, max_chunks: int = 10) -> list:
+#     """
+#     Splits the input text into evenly sized chunks (by character count), preserving all content.
+
+#     Args:
+#         text (str): The full input text.
+#         max_chunks (int): The maximum number of chunks to return.
+
+#     Returns:
+#         list: A list of strings, each being a chunk of the input text.
+#     """
+#     text = text.strip()
+#     total_length = len(text)
+#     chunk_size = total_length // max_chunks + (1 if total_length % max_chunks else 0)
+#     return [text[i:i + chunk_size] for i in range(0, total_length, chunk_size)]
+
+
+# def initialize_chroma_store(group_data: dict, collection_name: str):
+#     try:
+        
+#         if "group_id" not in group_data:
+#             logger.error("Missing 'group_id' in group_data")
+#             raise ValueError("Missing 'group_id' in group_data")
+        
+#         # Combine all text content
+#         combined_documents = [group_data["formatted"]] + group_data["documents"]
+#         combined_text = "\n\n".join(combined_documents)
+
+#         # Split into max 10 chunks using equal size method
+#         raw_chunks = split_text_into_chunks(combined_text, max_chunks=10)
+#         all_chunks = [
+#     LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"]})
+    
+#     for chunk in raw_chunks
+# ]
+
+#         # Log chunk info and optionally test embeddings
+#         for i, chunk in enumerate(all_chunks):
+#             logger.info(f" Chunk {i+1}/{len(all_chunks)}: {len(chunk.page_content)} characters")
+#             try:
+#                 embedding = ollama_embeddings.embed_documents([chunk.page_content])
+#                 if embedding and embedding[0]:
+#                     logger.info(f" Embedded Chunk {i+1}: Vector Length = {len(embedding[0])}")
+#                 else:
+#                     logger.warning(f" Empty embedding for Chunk {i+1}")
+#             except Exception as e:
+#                 logger.error(f"Embedding error in Chunk {i+1}: {str(e)}")
+#                 raise
+
+#         # Create and persist Chroma vector store
+#         vectorstore = Chroma.from_documents(
+#     documents=all_chunks,
+#     embedding=ollama_embeddings,
+#     persist_directory=persist_dir,
+#     collection_name=collection_name
+# )
+
+#         vectorstore.persist()
+#         logger.info(f"✅ Chroma collection '{collection_name}' created and persisted successfully with {len(all_chunks)} chunks.")
+#         return vectorstore, all_chunks, collection_name
+
+#     except Exception as e:
+#         logger.error(f"Error initializing Chroma store: {str(e)}")
+#         raise HTTPException(status_code=500, detail="Error initializing Chroma store")
+
+# # ---------------------------------------------
+# # 3. Utility to Fetch VectorStore from ChromaDB
+# # ---------------------------------------------
+# def retrieve_vectorstore_from_chromadb(collection_name: str):
+#     return Chroma(
+#         collection_name=collection_name,
+#         persist_directory=persist_dir,
+#         embedding_function=ollama_embeddings
+#     )
+    
+# # ---------------------------------------------
+# # 4. Utility: Get ChromaDB Collection Name
+# # ---------------------------------------------
+# def get_chromadb_collection_name(group_ids, project_ids):
+#     if group_ids and project_ids:
+#         return f"project_{project_ids[0]}_group_{group_ids[0]}"
+#     raise HTTPException(status_code=400, detail="Invalid group/project IDs")
+
+# # ---------------------------------------------
+# # 5. Get Group + Project from Conversation
+# # ---------------------------------------------
+# def fetch_group_and_project_for_conversation(conversation_id: int, db: Session):
+#     conversation = db.query(ChatConversation).filter(
+#         ChatConversation.id == conversation_id,
+#         ChatConversation.is_deleted == False
+#     ).first()
+#     print(f"[Debug] Groups linked to conversation {conversation_id}: {[g.id for g in conversation.session.groups]}")
+
+#     if not conversation:
+#         raise HTTPException(status_code=404, detail="ChatConversation not found")
+
+#     session = conversation.session
+#     group_ids = [g.id for g in session.groups]
+#     project_ids = [g.project_id for g in session.groups]
+#     print(f"[Debug] Groups linked to conversation {conversation_id}: {[g.id for g in conversation.session.groups]}")
+
+#     if not group_ids or not project_ids:
+#         raise HTTPException(status_code=404, detail="Groups or Projects not found")
+
+#     return group_ids, project_ids
+
+# # ---------------------------------------------
+# # 6. Main Response Generator Function
+# # ---------------------------------------------
+
+# from collections import defaultdict
+# import re
+
+# def format_chunks_for_prompt(all_chunks, group_id_map):
+#     grouped_contents = defaultdict(set)
+
+#     for chunk in all_chunks:
+#         content = chunk.page_content.strip()
+#         cleaned_content = re.sub(r"^Formatted content for .*?\n+", "", content, flags=re.IGNORECASE).strip()
+
+#         # Deduplicate based on cleaned content
+#         grouped_contents[chunk.metadata.get("group_id")].add(cleaned_content)
+
+#     formatted = []
+#     for group_id, contents in grouped_contents.items():
+#         group_label = group_id_map.get(group_id, f"Group {group_id}" if group_id else "Unknown Group")
+
+#         # Combine all unique contents for this group
+#         group_text = "\n\n".join(sorted(contents))
+#         formatted.append(f"Formatted content for {group_label}\n\n{group_text}")
+
+#     return "\n\n---\n\n".join(formatted)
+
+# def generate_response_for_conversation(conversation_id: int, user_prompt: str, db: Session, current_user: User):
+#     try:
+#         # Check if it's a greeting
+#         if user_prompt.lower().strip() in ['hi', 'hello', 'hey', 'how are you']:
+#             response = "Hello! How can I assist you today?"
+#             return JSONResponse(content={
+#                 "response": response,
+#                 "conversation_id": conversation_id,
+#                 "user_message": user_prompt,
+#                 "assistant_message": response,
+#                 "history": []
+#             })
+
+#         # Fetch metadata
+#         group_ids, project_ids = fetch_group_and_project_for_conversation(conversation_id, db)
+#         print(f"[Debug] Group IDs retrieved: {group_ids}")
+#         for idx, g_id in enumerate(group_ids):
+#             print(f"[Debug] Group {idx+1} ID: {g_id}, Collection Name: project_{project_ids[0]}_group_{g_id}")
+
+#         group_info = fetch_group_data(group_ids, db)
+#         # collection_name = get_chromadb_collection_name(group_ids, project_ids)
+#         # vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
+#         # search_results = vectorstore.similarity_search(user_prompt, k=5)
+#         all_chunks = []
+        
+       
+
+#         client = Client(Settings(persist_directory=persist_dir))
+#         collections = client.list_collections()
+#         print(f"[Debug] Existing ChromaDB collections: {[c.name for c in collections]}")
+
+#         for group_id in group_ids:
+#             collection_name = f"project_{project_ids[0]}_group_{group_id}"
+#             try:
+#                 vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
+#                 chunks = vectorstore.similarity_search(user_prompt, k=20)
+#                 if chunks:
+#                     print(f"[Debug] Retrieved {len(chunks)} chunks from {collection_name}")
+#                 else:
+#                     print(f"[Debug] No chunks found for {collection_name}")
+
+#         # Log chunks before formatting
+#                 for chunk in chunks:
+#                     print(f"Raw chunk content: {chunk.page_content[:200]}...")  # Debugging first 200 characters
+
+#                 all_chunks.extend(chunks)
+#             except Exception as e:
+#                 logger.error(f"[Error] Failed to retrieve vectorstore for {collection_name}: {e}")
+
+
+#         group_id_map = {group_id: f"Group {i+1}" for i, group_id in enumerate(group_ids)}
+
+#         formatted_chunks = format_chunks_for_prompt(all_chunks,group_id_map)
+#         # Chat history
+#         history_records = db.query(ChatHistory).filter(
+#             ChatHistory.chat_conversation_id == conversation_id,
+#             ChatHistory.is_deleted == False
+#         ).order_by(ChatHistory.created_at.asc()).all()
+
+#         history_prompt = "\n".join([f"User: {h.query}\nAssistant: {h.response}" for h in history_records])
+
+#         # Active instructions
+#         instructions = db.query(Instruction).filter(Instruction.is_deleted == False, Instruction.is_activate == True).all()
+#         instructions_info = "\n".join([f"Instruction: {instr.content}" for instr in instructions])
+#         print("Formated Chunks",formatted_chunks)
+#         # System Prompt
+#         system_prompt = f"""
+# You are a highly capable and context-aware assistant helping a user with information from documents, videos, and previous conversations. Use the instructions and retrieved knowledge to respond in a helpful, clear, and tone-adaptive manner.
+
+# ##  Primary Context (Documents & Video Transcripts):
+# The following is background information from the user’s selected groups. Use it to understand the broader context, tone, and style. Incorporate relevant information, but do not repeat it verbatim unless directly relevant.
+# {formatted_chunks}
+
+# ## Tones:
+# {", ".join(group_info["tones"]).capitalize() or "Neutral"}
+
+# ## Styles:
+# {", ".join(group_info["styles"]).capitalize() or "Plain"}
+
+# ## Chat History:
+# {history_prompt}
+
+# ## Instructions:
+# {instructions_info}
+
+# ## User Prompt:
+# {user_prompt}
+
+# ## Assistant Response:
+# """
+
+#         # Generate response
+#         response = llm.invoke([
+#             {"role": "system", "content": system_prompt},
+#             {"role": "user", "content": user_prompt}
+#         ])
+
+#         # Save to DB
+#         new_chat = ChatHistory(
+#             query=user_prompt.strip(),
+#             response=response.strip(),
+#             context=group_info,
+#             chat_conversation_id=conversation_id,
+#             user_id=current_user.id
+#         )
+#         db.add(new_chat)
+#         db.commit()
+
+#         # Build history for UI
+#         history_ui = [
+#             {
+#                 "sender": "User",
+#                 "message": h.query,
+#                 "response": h.response,
+#                 "timestamp": h.created_at.isoformat()
+#             }
+#             for h in history_records if h.query
+#         ] + [{
+#             "sender": "User",
+#             "message": user_prompt.strip(),
+#             "response": response.strip(),
+#             "timestamp": datetime.datetime.utcnow().isoformat()
+#         }]
+
+#         return JSONResponse(content={
+#             "response": response.strip(),
+#             "conversation_id": conversation_id,
+#             "user_message": user_prompt,
+#             "assistant_message": response.strip(),
+#             "based_on_groups": group_ids,
+#             "tone_used": ", ".join([t.capitalize() for t in group_info["tones"]]),
+#             "style_used": ", ".join([s.capitalize() for s in group_info["styles"]]),
+#             "history": history_ui
+#         })
+
+#     except Exception as e:
+#         logger.error(f"Error: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+    
+#     except Exception as e:
+#         logger.error(f"[Error] Failed to retrieve vectorstore for {collection_name}: {e}")
+#         logger.warning(f"[Warning] Skipping group {group_id}. Possibly missing ChromaDB or no data.")
+
+
+#implementing the chunks index
+
 import os
 import datetime
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from chromadb import Client
+from chromadb.config import Settings
 from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -22,6 +371,7 @@ os.makedirs(persist_dir, exist_ok=True)
 # 1. Fetch group documents, video transcripts
 # ---------------------------------------------
 def fetch_group_data(group_ids: list, db: Session):
+    """Fetch the Specific Groups from Database """
     formatted_sections, tone_set, style_set, documents = [], set(), set(), []
     
     for group_id in group_ids:
@@ -66,22 +416,33 @@ def fetch_group_data(group_ids: list, db: Session):
 # 2. Initialize Chroma Vector Store
 # ---------------------------------------------
 
-def split_text_into_chunks(text: str, max_chunks: int = 10) -> list:
-    """
-    Splits the input text into evenly sized chunks (by character count), preserving all content.
+# def split_text_into_chunks(text: str, max_chunks: int = 10) -> list:
+#     """
+#     Splits the input text into evenly sized chunks (by character count), preserving all content.
 
-    Args:
-        text (str): The full input text.
-        max_chunks (int): The maximum number of chunks to return.
+#     Args:
+#         text (str): The full input text.
+#         max_chunks (int): The maximum number of chunks to return.
 
-    Returns:
-        list: A list of strings, each being a chunk of the input text.
-    """
-    text = text.strip()
-    total_length = len(text)
-    chunk_size = total_length // max_chunks + (1 if total_length % max_chunks else 0)
-    return [text[i:i + chunk_size] for i in range(0, total_length, chunk_size)]
+#     Returns:
+#         list: A list of strings, each being a chunk of the input text.
+#     """
+#     text = text.strip()
+#     total_length = len(text)
+#     chunk_size = total_length // max_chunks + (1 if total_length % max_chunks else 0)
+#     return [text[i:i + chunk_size] for i in range(0, total_length, chunk_size)]
 
+def split_text_with_recursive_splitter(text: str, chunk_size: int = 1000, chunk_overlap: int = 200, max_chunks: int = 10):
+    """Spliting the text with chunk and overlap"""
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", ".", " ", ""]
+    )
+    all_chunks = splitter.split_text(text)
+    
+    # Truncate to a maximum number of chunks
+    return all_chunks[:max_chunks]
 
 def initialize_chroma_store(group_data: dict, collection_name: str):
     try:
@@ -95,10 +456,10 @@ def initialize_chroma_store(group_data: dict, collection_name: str):
         combined_text = "\n\n".join(combined_documents)
 
         # Split into max 10 chunks using equal size method
-        raw_chunks = split_text_into_chunks(combined_text, max_chunks=10)
+        raw_chunks = split_text_with_recursive_splitter(combined_text, max_chunks=10)
         all_chunks = [
-    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"]})
-    for chunk in raw_chunks
+    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"],"chunk_index": idx})
+    for idx, chunk in enumerate(raw_chunks)
 ]
 
         # Log chunk info and optionally test embeddings
@@ -139,7 +500,7 @@ def retrieve_vectorstore_from_chromadb(collection_name: str):
         persist_directory=persist_dir,
         embedding_function=ollama_embeddings
     )
-
+    
 # ---------------------------------------------
 # 4. Utility: Get ChromaDB Collection Name
 # ---------------------------------------------
@@ -156,12 +517,15 @@ def fetch_group_and_project_for_conversation(conversation_id: int, db: Session):
         ChatConversation.id == conversation_id,
         ChatConversation.is_deleted == False
     ).first()
+    print(f"[Debug] Groups linked to conversation {conversation_id}: {[g.id for g in conversation.session.groups]}")
+
     if not conversation:
         raise HTTPException(status_code=404, detail="ChatConversation not found")
 
     session = conversation.session
     group_ids = [g.id for g in session.groups]
     project_ids = [g.project_id for g in session.groups]
+    print(f"[Debug] Groups linked to conversation {conversation_id}: {[g.id for g in conversation.session.groups]}")
 
     if not group_ids or not project_ids:
         raise HTTPException(status_code=404, detail="Groups or Projects not found")
@@ -172,28 +536,34 @@ def fetch_group_and_project_for_conversation(conversation_id: int, db: Session):
 # 6. Main Response Generator Function
 # ---------------------------------------------
 
-from collections import defaultdict
-import re
-
 def format_chunks_for_prompt(all_chunks, group_id_map):
-    grouped_contents = defaultdict(set)
+    from collections import defaultdict
+    import re
+
+    grouped_contents = defaultdict(list)
 
     for chunk in all_chunks:
         content = chunk.page_content.strip()
-        cleaned_content = re.sub(r"^Formatted content for .*?\n+", "", content, flags=re.IGNORECASE).strip()
+        if not content:
+            continue
 
-        # Deduplicate based on cleaned content
-        grouped_contents[chunk.metadata.get("group_id")].add(cleaned_content)
+        # Clean heading remnants if present
+        cleaned_content = re.sub(r"^Formatted content for[^\n]*\n*", "", content, flags=re.IGNORECASE).strip()
+
+        group_id = chunk.metadata.get("group_id")
+        group_label = group_id_map.get(group_id, f"Group {group_id}" if group_id else "Unknown Group")
+
+        if cleaned_content not in grouped_contents[group_id]:
+            grouped_contents[group_id].append(cleaned_content)
 
     formatted = []
     for group_id, contents in grouped_contents.items():
-        group_label = group_id_map.get(group_id, f"Group {group_id}" if group_id else "Unknown Group")
-
-        # Combine all unique contents for this group
-        group_text = "\n\n".join(sorted(contents))
+        group_label = group_id_map.get(group_id, f"Group {group_id}")
+        group_text = "\n\n".join(contents)
         formatted.append(f"Formatted content for {group_label}\n\n{group_text}")
-
+        print()
     return "\n\n---\n\n".join(formatted)
+
 
 def generate_response_for_conversation(conversation_id: int, user_prompt: str, db: Session, current_user: User):
     try:
@@ -210,27 +580,62 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
 
         # Fetch metadata
         group_ids, project_ids = fetch_group_and_project_for_conversation(conversation_id, db)
+        print(f"[Debug] Group IDs retrieved: {group_ids}")
+        for idx, g_id in enumerate(group_ids):
+            print(f"[Debug] Group {idx+1} ID: {g_id}, Collection Name: project_{project_ids[0]}_group_{g_id}")
+
         group_info = fetch_group_data(group_ids, db)
         # collection_name = get_chromadb_collection_name(group_ids, project_ids)
         # vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
         # search_results = vectorstore.similarity_search(user_prompt, k=5)
         all_chunks = []
+        
+       
+
+        client = Client(Settings(persist_directory=persist_dir))
+        collections = client.list_collections()
+        print(f"[Debug] Existing ChromaDB collections: {[c.name for c in collections]}")
 
         for group_id in group_ids:
             collection_name = f"project_{project_ids[0]}_group_{group_id}"
             try:
                 vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
                 chunks = vectorstore.similarity_search(user_prompt, k=20)
+                chunks = sorted(chunks, key=lambda c: c.metadata.get("chunk_index", 0))
+                if chunks:
+                    print(f"[Debug] Retrieved {len(chunks)} chunks from {collection_name}")
+                    
+                else:
+                    print(f"[Debug] No chunks found for {collection_name}")
 
         # Log chunks before formatting
                 for chunk in chunks:
                     print(f"Raw chunk content: {chunk.page_content[:200]}...")  # Debugging first 200 characters
+                    print(f"Chunk Index: {chunk.metadata.get('chunk_index')}, Length: {len(chunk.page_content)}")
 
                 all_chunks.extend(chunks)
             except Exception as e:
-                logger.warning(f"Could not retrieve vectorstore for {collection_name}: {e}")
+                logger.error(f"[Error] Failed to retrieve vectorstore for {collection_name}: {e}")
+
 
         group_id_map = {group_id: f"Group {i+1}" for i, group_id in enumerate(group_ids)}
+        import re
+
+# Extract any referenced group number in the user prompt
+        match = re.search(r"\bgroup\s*(\d+)\b", user_prompt, re.IGNORECASE)
+        requested_group = int(match.group(1)) if match else None
+
+# Get valid group numbers based on group_id_map
+        valid_group_numbers = list(range(1, len(group_id_map) + 1))
+
+# Create warning note if user references a group not in the list
+        group_reference_note = ""
+        if requested_group and requested_group not in valid_group_numbers:
+            group_reference_note = (
+        f"\n\n⚠️ NOTE: You referenced Group {requested_group}, "
+        f"but only Groups {valid_group_numbers} are available. "
+        f"The assistant will ignore that reference unless it’s linked."
+        )
 
         formatted_chunks = format_chunks_for_prompt(all_chunks,group_id_map)
         # Chat history
@@ -247,28 +652,46 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
         print("Formated Chunks",formatted_chunks)
         # System Prompt
         system_prompt = f"""
-You are a highly capable and context-aware assistant helping a user with information from documents, videos, and previous conversations. Use the instructions and retrieved knowledge to respond in a helpful, clear, and tone-adaptive manner.
+You are a YouTube automation assistant helping creators repurpose and remix content from PDFs and videos into engaging scripts, captions, or short-form ideas. 
 
-##  Primary Context (Documents & Video Transcripts):
-The following is background information from the user’s selected groups. Use it to understand the broader context, tone, and style. Incorporate relevant information, but do not repeat it verbatim unless directly relevant.
-{formatted_chunks}
+## OBJECTIVE:
+Based on the user's query, select the most relevant content group (e.g. video script templates, business PDFs, or content breakdowns). Your job is to generate a clear, engaging, and audience-tailored script or content piece that feels original and useful — not copied.
 
-## Tones:
-{", ".join(group_info["tones"]).capitalize() or "Neutral"}
-
-## Styles:
-{", ".join(group_info["styles"]).capitalize() or "Plain"}
-
-## Chat History:
-{history_prompt}
-
-## Instructions:
-{instructions_info}
-
-## User Prompt:
+## USER QUERY:
 {user_prompt}
 
-## Assistant Response:
+## CONTENT SOURCES (PDFs, Video Transcripts, or Documents):
+## IMPORTANT: If the user query references a specific group (e.g. "Group 2"), use only that group's content — ignore all others, even if present.
+{group_reference_note}
+
+The following is background information from the user’s list of groups based on the query above. Use it to understand the broader context:
+{formatted_chunks}
+
+## GROUP TONE(S):
+{", ".join(group_info["tones"]) or "Neutral"}
+
+## GROUP STYLE(S):
+{", ".join(group_info["styles"]) or "Plain"}
+
+## CHAT HISTORY:
+{history_prompt}
+
+## INSTRUCTIONS:
+{instructions_info}
+
+---
+
+## OUTPUT RULES:
+- Focus only on relevant source groups based on the user’s request.
+- Rewrite key concepts using a fresh tone, hook, or format.
+- If asked for a video script, structure output as:
+  [HOOK] → [VALUE] → [EXAMPLES/PROOF] → [CTA]
+- Avoid repeating content verbatim unless explicitly requested.
+- You can draw from both documents and video transcripts but remix them creatively.
+
+---
+
+## FINAL OUTPUT:
 """
 
         # Generate response
@@ -318,5 +741,12 @@ The following is background information from the user’s selected groups. Use i
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"[Error] Failed to retrieve vectorstore for {collection_name}: {e}")
+        logger.warning(f"[Warning] Skipping group {group_id}. Possibly missing ChromaDB or no data.")
+
+
+
 
 

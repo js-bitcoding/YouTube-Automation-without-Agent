@@ -55,7 +55,7 @@ def create_project_api(
     except Exception as e:
         # This will handle any unexpected errors
         logger.exception(f"Unexpected error while creating project for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to create project.")
+        raise HTTPException(status_code=500, detail="Internal Server Error while create project.")
 
 @project_router.put("/{project_id}/")
 def update_project_api(
@@ -103,7 +103,7 @@ def update_project_api(
     except Exception as e:
         
         logger.exception(f"Error while updating project {project_id} for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to update project.")
+        raise HTTPException(status_code=500, detail="Internal Server Error while update project.")
 
 @project_router.delete("/{project_id}/")
 def delete_project_api(
@@ -140,7 +140,7 @@ def delete_project_api(
 
     except Exception as e:
         logger.exception(f"Error while deleting project {project_id} for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to delete project.")
+        raise HTTPException(status_code=500, detail="Internal Server Error while delete project.")
 
 
 @project_router.get("/list/")
@@ -183,7 +183,7 @@ def list_projects_api(
         }
     except Exception as e:
         logger.exception(f"Error while listing projects for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to list projects.")
+        raise HTTPException(status_code=500, detail="Internal Server Error while fetch list projects.")
 
 
 @project_router.get("/get/{project_id}/")
@@ -229,4 +229,4 @@ def get_project_by_id(
 
     except Exception as e:
         logger.exception(f"Error while retrieving project {project_id} for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Failed to retrieve project.")
+        raise HTTPException(status_code=500, detail="Internal Server Error while fetch list projects.")
