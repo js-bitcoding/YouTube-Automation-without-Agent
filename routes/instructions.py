@@ -144,7 +144,7 @@ def update_instruction(
     
     except Exception as e:
         logger.error(f"Unexpected error occurred: {str(e)}")
-        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred while Updating instruction "})
 
 
 
@@ -233,7 +233,7 @@ def get_my_instructions(
     
     except Exception as e:
         logger.error(f"Unexpected error occurred: {str(e)}")
-        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred while get the instruction"})
 
 @instruction_router.get("/get/{instruction_id}/", response_model=InstructionOut)
 def get_instruction_by_id(
@@ -276,7 +276,7 @@ def get_instruction_by_id(
     
     except Exception as e:
         logger.error(f"Unexpected error occurred: {str(e)}")
-        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred while get the instruction"})
 
 @instruction_router.put("/activate/{instruction_id}/", response_model=InstructionOut)
 def activate_instruction(
@@ -350,4 +350,4 @@ def activate_instruction(
     
     except Exception as e:
         logger.error(f"Unexpected error occurred: {str(e)}")
-        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred while activate instruction"})

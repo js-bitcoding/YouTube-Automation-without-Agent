@@ -68,11 +68,11 @@ def signup(user_data: UserRegister, db: Session = Depends(get_db)):
 
     except SQLAlchemyError as e:
         db.rollback()
-        logger.exception("Signup failed due to DB error.")
-        raise HTTPException(status_code=500, detail="⚠️ Registration failed due to a server error.")
+        logger.exception(f"Signup failed due to DB error.{e}")
+        raise HTTPException(status_code=500, detail=f"⚠️ Registration failed due to a server error. {e}")
     except Exception as e:
         logger.exception("Unexpected error during signup.")
-        raise HTTPException(status_code=500, detail="Unexpected error during registration.")
+        raise HTTPException(status_code=500, detail=f"Unexpected error during registration. {e}")
 
 
 @router.post("/login")
@@ -118,12 +118,12 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
         token = create_jwt_token({"user_id": user.id})
         logger.info(f"User {user.username} logged in successfully.")
         return JSONResponse(status_code=201, content={"token": token, "message": "✅ Login successful! Now You Can Explore It !"})
-    except SQLAlchemyError:
+    except SQLAlchemyError as e:
         db.rollback()
-        logger.exception("Login failed due to DB error.")
-        raise HTTPException(status_code=500, detail="⚠️ Login failed due to server error.")
-    except Exception:
-        logger.exception("Unexpected error during login.")
+        logger.exception(f"Login failed due to DB error. {e}")
+        raise HTTPException(status_code=500, detail=f"⚠️ Login failed due to server error. {e}")
+    except Exception as e:
+        logger.exception(f"Unexpected error during login. {e}")
         raise HTTPException(status_code=500, detail="Password or Username Must be Valid")
 
 

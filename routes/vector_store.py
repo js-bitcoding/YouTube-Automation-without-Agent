@@ -4,15 +4,7 @@ from langchain_ollama import OllamaEmbeddings
 from utils.logging_utils import logger
 from pydantic import BaseModel
 from typing import List, Optional
-
-class CollectionResponseModel(BaseModel):
-    ids: List[str]
-    embeddings: Optional[List[List[float]]]
-    documents: List[str]
-    uris: Optional[List[str]] = None
-    data: Optional[List[str]] = None
-    metadatas: List[Optional[dict]]
-    included: List[str]
+from database.schemas import CollectionResponseModel
 
 router = APIRouter()
 

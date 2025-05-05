@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session,joinedload
 from fastapi import APIRouter, Depends ,HTTPException
-from database.models import User, Group, ChatConversation, ChatSession, chat_session_group
+from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
 from service.chat_ai_agent_service import generate_response_for_conversation
 from database.db_connection import get_db
 from functionality.current_user import get_current_user
@@ -32,6 +32,8 @@ def get_all_conversations(db: Session = Depends(get_db), current_user: User = De
 
         logger.info(f"{len(get_all_cov)} conversations retrieved for User ID {current_user.id}")
         return get_all_cov
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error retrieving conversations for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="No Conversation Found")
@@ -69,7 +71,12 @@ def create_conversation(
         if not name or len(name.strip()) == 0:
             raise HTTPException(status_code=400, detail="Conversation name is required and cannot be empty")
 
-        conversation = ChatConversation(name=name, chat_session_id=session_id)
+        active_instruction = db.query(Instruction).filter(
+            Instruction.is_activate == True,
+            Instruction.is_deleted == False
+        ).first()
+
+        conversation = ChatConversation(name=name, chat_session_id=session_id,instruction_id=active_instruction.id if active_instruction else None)
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
@@ -83,6 +90,8 @@ def create_conversation(
 
         logger.info(f"Conversation created with ID {conversation.id} for Session ID {session_id}")
         return conversation
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error creating conversation for Session ID {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating conversation for Session ID {session_id}: {e}")
@@ -125,6 +134,8 @@ def update_conversation_name(
 
         logger.info(f"Conversation ID {conversation_id} renamed to '{name}' by User ID {current_user.id}")
         return {"message": "Conversation name updated"}
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error updating conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating conversation ID {conversation_id}: {e}")
@@ -176,6 +187,8 @@ def get_conversation_by_id(
                 for chat in convo.chats if not chat.is_deleted
             ]
         }
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error retrieving conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving conversation ID {conversation_id}: {e}")
@@ -212,6 +225,8 @@ def delete_conversation(
         db.commit()
         logger.info(f"Conversation ID {conversation_id} marked as deleted by User ID {current_user.id}")
         return {"message": "Conversation deleted"}
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error deleting conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error deleting conversation ID {conversation_id}: {e}")
@@ -242,6 +257,8 @@ def generate_group_response(
 
         logger.info(f"Generating response for Conversation ID {conversation_id} with prompt: {user_prompt[:50]}... by User ID {current_user.id}")
         return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error generating response for Conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating response for Conversation ID {conversation_id}: {e}")

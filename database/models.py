@@ -95,7 +95,6 @@ class Channel(Base):
     total_subscribers = Column(BigInteger, default=0)
     total_videos = Column(BigInteger, default=0)
     country = Column(String(50))
-    created_at = Column(DateTime, default=timezone)
 
     videos = relationship("Video", back_populates="channel", cascade="all, delete-orphan")
 

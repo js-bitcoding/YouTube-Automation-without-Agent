@@ -381,7 +381,8 @@ def get_user_groups_with_content_api(
 
         logger.info(f"Successfully fetched {len(content)} groups with content for user {current_user.id}.")
         return {"groups": content}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error occurred while fetching groups for user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")
@@ -417,7 +418,8 @@ def get_user_group_with_content_api(
 
         logger.info(f"Successfully retrieved content for group {group_id} for user {current_user.id}.")
         return {"group": content}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error occurred while fetching content for group {group_id} by user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving the group content.")

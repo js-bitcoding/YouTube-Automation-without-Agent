@@ -93,10 +93,8 @@ def update_project_api(
         return updated_project
 
     except HTTPException as e:
-        
         raise e
-    except Exception as e:
-        
+    except Exception as e:        
         logger.exception(f"Error while updating project {project_id} for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to update project.")
 
@@ -132,7 +130,8 @@ def delete_project_api(
         
         logger.info(f"Project {project_id} successfully deleted by user {user.id}")
         return {"message": f"Project {project_id} successfully deleted."}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error while deleting project {project_id} for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete project.")
@@ -176,6 +175,8 @@ def list_projects_api(
                 for project in projects
             ]
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error while listing projects for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to list projects.")
@@ -221,7 +222,8 @@ def get_project_by_id(
             "name": project.name,
             "created_time": project.created_time
         }
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error while retrieving project {project_id} for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve project.")

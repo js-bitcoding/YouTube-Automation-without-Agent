@@ -15,13 +15,136 @@ from config import YOUTUBE_API_KEY
 from database.models import Video, timezone
 from utils.logging_utils import logger
 
+YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 BASE_URL = "https://www.googleapis.com/youtube/v3"
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+CHANNEL_API_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 session = Session()
+
+def fetch_related_videos(video_id: str, max_results: int = 5) -> List[Dict]:
+    """Fetch related videos based on videoId by first getting the video title"""
+    if not YOUTUBE_API_KEY:
+        raise ValueError("YouTube API Key is missing.")
+
+    # Step 1: Fetch the title of the video
+    title = get_video_title(video_id)
+    
+    # Step 2: Use the video title to search for related videos
+    params = {
+        "part": "snippet",
+        "q": title,
+        "type": "video",
+        "maxResults": max_results,
+        "key": YOUTUBE_API_KEY,
+    }
+
+    try:
+        response = requests.get(f"{BASE_URL}/search", params=params)
+        print("Request params:", params)  # Debug
+        print("Request URL:", response.url)  # Debug
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        print("YouTube API error:", e.response.text)
+        return []
+
+    data = response.json()
+    return [
+        {
+            "video_id": item["id"]["videoId"],
+            "title": item["snippet"]["title"],
+            "thumbnail": item["snippet"]["thumbnails"]["high"]["url"],
+            "channel_id": item["snippet"]["channelId"],
+            "channel_name": item["snippet"]["channelTitle"],
+            "video_url": f"https://www.youtube.com/watch?v={item['id']['videoId']}"
+        }
+        for item in data.get("items", [])
+        if "videoId" in item.get("id", {})
+    ]
+
+def fetch_homepage_videos():
+    """
+    Fetches popular videos for the home page.
+    """
+    params = {
+        "part": "snippet,statistics",
+        "chart": "mostPopular",  # Fetch most popular videos
+        "regionCode": "IN",      # Set region (you can change it to any country code)
+        "maxResults": 10,        # Number of videos to return
+        "key": YOUTUBE_API_KEY           # API key for authentication
+    }
+
+    response = requests.get(YOUTUBE_API_URL, params=params)
+
+    if response.status_code == 200:
+        data = response.json()
+        videos = []
+
+        for video in data["items"]:
+            video_id = video["id"]
+            snippet = video["snippet"]
+            statistics = video["statistics"]
+
+            # Get channel information
+            channel_id = snippet["channelId"]
+            channel_url = f"{CHANNEL_API_URL}?part=snippet,statistics&id={channel_id}&key={YOUTUBE_API_KEY}"
+            channel_response = requests.get(channel_url)
+            if channel_response.status_code == 200:
+                channel_data = channel_response.json()["items"][0]["statistics"]
+            else:
+                print(f"Error fetching channel data: {channel_response.status_code}")
+                channel_data = {}
+
+
+            # Extract video details
+            video_details = {
+                "video_id": video_id,
+                "title": snippet["title"],
+                "thumbnail": snippet["thumbnails"]["medium"]["url"],
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "views": int(statistics.get("viewCount", 0)),
+                "likes": int(statistics.get("likeCount", 0)),
+                "comments": int(statistics.get("commentCount", 0)),
+                "upload_date": snippet["publishedAt"],
+                "channel_name": snippet["channelTitle"],
+                "channel_id": channel_id,
+                "subscribers": int(channel_data.get("subscriberCount", 0)),
+            }
+
+            # Calculate engagement metrics
+            video_details["view_to_subscriber_ratio"] = calculate_view_to_subscriber_ratio(
+                video_details["views"], video_details["subscribers"]
+            )
+            video_details["view_velocity"] = calculate_view_velocity(video_details)
+            video_details["engagement_rate"] = calculate_engagement_rate(video_details)
+
+            videos.append(video_details)
+
+        return videos
+    else:
+        print(f"Error {response.status_code}: {response.text}")
+        return {"error": "Failed to fetch data from YouTube API"}
+
+
+def get_video_title(video_id: str) -> str:
+    """Fetch the title of the video based on its videoId"""
+    params = {
+        "part": "snippet",
+        "id": video_id,
+        "key": YOUTUBE_API_KEY,
+    }
+    
+    response = requests.get(f"{BASE_URL}/videos", params=params)
+    response.raise_for_status()  # Raise error for non-200 status
+    data = response.json()
+    
+    if "items" in data and len(data["items"]) > 0:
+        return data["items"][0]["snippet"]["title"]
+    else:
+        raise ValueError("Video not found")
 
 def fetch_video_thumbnails(keyword: str) -> List[Dict[str, str]]:
     """
@@ -398,3 +521,4 @@ def fetch_video_by_id(video_id: str) -> Dict[str, Union[str, int]]:
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching video by ID: {e}")
         return {"error": "An unexpected error occurred"}
+    
