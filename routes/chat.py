@@ -32,6 +32,8 @@ def get_all_conversations(db: Session = Depends(get_db), current_user: User = De
 
         logger.info(f"{len(get_all_cov)} conversations retrieved for User ID {current_user.id}")
         return get_all_cov
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error retrieving conversations for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="No Conversation Found")
@@ -81,6 +83,8 @@ def create_conversation(
 
         logger.info(f"Conversation created with ID {conversation.id} for Session ID {session_id}")
         return conversation
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error creating conversation for Session ID {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error while create conversation for the session {e}")
@@ -122,6 +126,8 @@ def update_conversation_name(
 
         logger.info(f"Conversation ID {conversation_id} renamed to '{name}' by User ID {current_user.id}")
         return {"message": "Conversation name updated"}
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error updating conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error while updating Conversation")
@@ -173,6 +179,8 @@ def get_conversation_by_id(
                 for chat in convo.chats if not chat.is_deleted
             ]
         }
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error retrieving conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error while retrieving conversation ID")
@@ -208,6 +216,8 @@ def delete_conversation(
         db.commit()
         logger.info(f"Conversation ID {conversation_id} marked as deleted by User ID {current_user.id}")
         return {"message": "Conversation deleted"}
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error deleting conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error while deleting conversation ID")
@@ -238,6 +248,8 @@ def generate_group_response(
 
         logger.info(f"Generating response for Conversation ID {conversation_id} with prompt: {user_prompt[:50]}... by User ID {current_user.id}")
         return generate_response_for_conversation(conversation_id, user_prompt, db, current_user)
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Error generating response for Conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error while generating the response")

@@ -64,10 +64,12 @@ def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends
     }
     for session in sessions
 ]
+    except HTTPException:
+        raise 
 
     except Exception as e:
         logger.exception(f"Failed to retrieve chat sessions for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch sessions.")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch sessions. Or Create Session.")
 
 
 @sessions_router.get("/{session_id}/")
@@ -104,10 +106,11 @@ def get_session_by_id(
                 } for conv in session.conversations
             ]
         }
-
+    except HTTPException:
+        raise 
     except Exception as e:
         logger.exception(f"Failed to retrieve chat session {session_id} for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch session.")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Unable to fetch session Or Create Session.")
 
 @sessions_router.post("/create/")
 def create_session_api(
@@ -178,7 +181,7 @@ def create_session_api(
         db.commit()
 
         chat_conversation = ChatConversation(
-            name=name,
+            name="My Conversation",
             chat_session_id=chat_session.id,
             instruction_id=active_instruction.id if active_instruction else None
 
@@ -220,6 +223,7 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
             - If the session is not found or the user is unauthorized to delete the session.
     """
     try:
+        # Validate and fetch the session
         session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
             ChatSession.id == session_id,
             Group.user_id == current_user.id
@@ -227,17 +231,26 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
 
         if not session:
             logger.error(f"Unauthorized access or session not found: {session_id} for User ID {current_user.id}")
-            raise HTTPException(status_code=404, detail="Session not found")
-        
+            raise HTTPException(status_code=404, detail="Session not found or access denied.")
+
+        # Delete related conversations
+        conversations = db.query(ChatConversation).filter(ChatConversation.chat_session_id == session_id).all()
+        for convo in conversations:
+            db.delete(convo)
+
+        # Mark the session as deleted (or delete it hard if preferred)
         session.is_deleted = True
         db.commit()
-        logger.info(f"Session ID {session_id} marked as deleted for User ID {current_user.id}")
-        return {"message": "Session deleted"}
 
+        logger.info(f"Session ID {session_id} and its {len(conversations)} conversation(s) deleted for User ID {current_user.id}")
+        return {"message": "Session and associated conversations successfully deleted."}
+
+    except HTTPException:
+        raise  # Re-raise known exceptions
     except Exception as e:
-        logger.exception(f"Failed to delete session {session_id} for User ID {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error: Failed to delete session.")
-    
+        logger.exception(f"Failed to delete session {session_id} and conversations for User ID {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Failed to delete session and conversations.")
+
 
 
 @sessions_router.put("/update/{session_id}/")

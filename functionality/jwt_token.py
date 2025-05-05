@@ -1,4 +1,5 @@
 import os
+import pytz
 import jwt as pyjwt
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -9,7 +10,7 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 
 def create_jwt_token(data: dict):
     """
@@ -22,7 +23,8 @@ def create_jwt_token(data: dict):
         str: Encoded JWT token string.
     """
     to_encode = data.copy()
-    expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    local_tz = pytz.timezone("Asia/Kolkata") 
+    expire = datetime.now(local_tz) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     logger.info(f"JWT created with expiration {expire.isoformat()}")
     return pyjwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

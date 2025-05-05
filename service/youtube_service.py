@@ -521,3 +521,4 @@ def fetch_video_by_id(video_id: str) -> Dict[str, Union[str, int]]:
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching video by ID: {e}")
         return {"error": "An unexpected error occurred"}
+    

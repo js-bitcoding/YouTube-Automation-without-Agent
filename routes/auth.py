@@ -108,7 +108,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
             logger.warning(f"Login failed: Invalid credentials for {user_data.username}.")
             raise HTTPException(status_code=400, detail="❌ Invalid username or password.")
 
-        login_record = UserLoginHistory(user_id=user.id, login_time=datetime.utcnow(), logout_time=None)
+        login_record = UserLoginHistory(user_id=user.id, login_time=datetime.now(), logout_time=None)
         db.add(login_record)
 
         user.is_active = True

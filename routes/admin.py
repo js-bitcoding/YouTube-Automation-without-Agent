@@ -29,6 +29,8 @@ def get_user_count(db: Session = Depends(get_db), _: User = Depends(admin_only))
             "total_users": len(users),
             "users": users
         }
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         logger.exception(f"Database error while fetching users. {e}")
         raise HTTPException(status_code=500, detail=f"⚠️ Failed to fetch users {e}")
@@ -83,7 +85,9 @@ def update_user(
                 "updated_at": user.updated_at
             }
         }
-
+    
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         logger.exception(f"Database error while updating user. {e}")
         db.rollback()
@@ -110,7 +114,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(a
         user.is_deleted = True
         db.commit()
         return {"message": f"🗑️ User ID {user_id} deleted"}
-
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         logger.exception("Database error while deleting user.")
         db.rollback()

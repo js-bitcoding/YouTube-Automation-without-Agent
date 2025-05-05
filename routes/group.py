@@ -154,8 +154,7 @@ async def update_group_content(
     """
     try:
         logger.info(f"Updating content for group {group_id} under project {project_id} by user {current_user.id}")
-
-        # ✅ Validate Project
+      
         project = db.query(Project).filter(
             Project.id == project_id,
             Project.user_id == current_user.id,
@@ -165,7 +164,6 @@ async def update_group_content(
             logger.error(f"Project {project_id} not found for user {current_user.id}")
             raise HTTPException(status_code=400, detail="Project not found.")
 
-        # ✅ Validate Group
         group = db.query(Group).filter(
             Group.id == group_id,
             Group.project_id == project_id,
@@ -175,7 +173,6 @@ async def update_group_content(
             logger.warning(f"Group {group_id} not found under project {project_id}")
             raise HTTPException(status_code=404, detail="Group not found.")
 
-        # ✅ Sanitize Inputs
         if files is None:
             files = []
 
@@ -185,7 +182,7 @@ async def update_group_content(
         if not valid_files and not valid_links:
             raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
-        # ✅ Step 1: Process and store documents/videos
+        
         results = await process_group_content(
             project_id=project_id,
             group_id=group_id,
@@ -199,7 +196,7 @@ async def update_group_content(
             logger.warning("Process returned no documents or videos")
             raise HTTPException(status_code=400, detail="No valid documents or YouTube links processed.")
 
-        # ✅ Step 2: Fetch freshly saved content
+      
         saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
         document_texts = [doc.content for doc in saved_documents if doc.content]
 
@@ -207,7 +204,7 @@ async def update_group_content(
         youtube_transcripts = [video.transcript for video in saved_videos if video.transcript]
         
         
-        # ✅ Step 3: Combine content
+        
         mixed_content = document_texts + youtube_transcripts
 
         if not mixed_content:
@@ -222,7 +219,7 @@ async def update_group_content(
 
         collection_name = f"project_{project_id}_group_{group_id}"
 
-        # ✅ Step 4: Store into ChromaDB
+      
         try:
             vectorstore, all_chunks, collection_id = initialize_chroma_store(group_data, collection_name)
             logger.info(f"✅ Chroma Collection ID: {collection_id}")
@@ -395,7 +392,8 @@ def get_user_groups_with_content_api(
 
         logger.info(f"Successfully fetched {len(content)} groups with content for user {current_user.id}.")
         return {"groups": content}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error occurred while fetching groups for user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")
@@ -433,7 +431,8 @@ def get_user_group_with_content_api(
 
         logger.info(f"Successfully retrieved content for group {group_id} for user {current_user.id}.")
         return {"group": content}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error occurred while fetching content for group {group_id} by user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving the group content.")
