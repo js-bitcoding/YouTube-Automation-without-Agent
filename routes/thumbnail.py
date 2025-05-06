@@ -190,6 +190,11 @@ def get_my_thumbnails(
     try:
         thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
         logger.info(f"User {user.id} retrieved {len(thumbnails)} thumbnails.")
+     
+        if not thumbnails:
+            logger.info(f"User {user.id} has no thumbnails stored.")
+            raise HTTPException(status_code=404, detail="You don't have any thumbnails stored.")
+
         return [
             {
                 "id": thumb.id,
@@ -205,7 +210,8 @@ def get_my_thumbnails(
             }
             for thumb in thumbnails
         ]
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Failed to retrieve thumbnails for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve thumbnails.")

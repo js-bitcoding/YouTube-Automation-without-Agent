@@ -145,6 +145,11 @@ def fetch_group_and_project_for_conversation(conversation_id: int, db: Session):
         raise HTTPException(status_code=404, detail="ChatConversation not found")
 
     session = conversation.session
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found for the conversation")
+
+    print(f"[Debug] Groups linked to conversation {conversation_id}: {[g.id for g in session.groups]}")
+
     group_ids = [g.id for g in session.groups]
     project_ids = [g.project_id for g in session.groups]
     print(f"[Debug] Groups linked to conversation {conversation_id}: {[g.id for g in conversation.session.groups]}")

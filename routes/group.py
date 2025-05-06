@@ -382,9 +382,10 @@ def get_user_groups_with_content_api(
         return {"groups": content}
     except HTTPException:
         raise
+
     except Exception as e:
-        logger.exception(f"Error occurred while fetching groups for user {current_user.id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")
+        logger.exception(f"Unexpected error while fetching groups for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Unexpected error occurred while retrieving groups.")
 
 @group_router.get("/{group_id}/")
 def get_user_group_with_content_api(

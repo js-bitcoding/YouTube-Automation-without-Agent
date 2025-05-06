@@ -273,8 +273,8 @@ def get_user_groups_with_content(user_id: int, db: Session):
             Group.is_deleted == False
         ).all()
 
-        if not groups:
-            raise HTTPException(status_code=404, detail="No groups found for this user.")
+        # if not groups:
+        #     raise HTTPException(status_code=404, detail="No groups found for this user.")
 
         group_list = []
         for group in groups:
@@ -303,8 +303,8 @@ def get_user_groups_with_content(user_id: int, db: Session):
 
         return group_list
     except Exception as e:
-        logger.error(f"Error retrieving groups for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving groups.")
+        logger.error(f"Unexpected DB error for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Unexpected error while retrieving groups.")
 
 def get_user_group_with_content_by_id(group_id: int, user_id: int, db: Session):
     """
