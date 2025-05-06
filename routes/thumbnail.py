@@ -189,32 +189,30 @@ def get_my_thumbnails(
     """
     try:
         thumbnails = db.query(Thumbnail).filter(Thumbnail.user_id == user.id).all()
+        print("thumbnails :::", thumbnails)
         logger.info(f"User {user.id} retrieved {len(thumbnails)} thumbnails.")
-     
-        if not thumbnails:
-            logger.info(f"User {user.id} has no thumbnails stored.")
-            raise HTTPException(status_code=404, detail="You don't have any thumbnails stored.")
-
-        return [
-            {
-                "id": thumb.id,
-                "video_id": thumb.video_id,
-                "title": thumb.title,
-                "url": thumb.url,
-                "saved_path": thumb.saved_path,
-                "text_detection": thumb.text_detection,
-                "face_detection": thumb.face_detection,
-                "emotion": thumb.emotion,
-                "color_palette": thumb.color_palette,
-                "keyword": thumb.keyword,
-            }
-            for thumb in thumbnails
-        ]
-    except HTTPException:
-        raise
     except Exception as e:
         logger.exception(f"Failed to retrieve thumbnails for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve thumbnails.")
+        
+    if not thumbnails:
+        logger.warning(f"Thumbnails not found for user {user.id}")
+        raise HTTPException(status_code=404, detail="Thumbnails not found.")
+    return [
+        {
+            "id": thumb.id,
+            "video_id": thumb.video_id,
+            "title": thumb.title,
+            "url": thumb.url,
+            "saved_path": thumb.saved_path,
+            "text_detection": thumb.text_detection,
+            "face_detection": thumb.face_detection,
+            "emotion": thumb.emotion,
+            "color_palette": thumb.color_palette,
+            "keyword": thumb.keyword,
+        }
+        for thumb in thumbnails
+    ]
 
 # @thumbnail_router.post("/generate_thumbnail/")
 # async def generate_thumbnail(
