@@ -2,7 +2,7 @@ import os
 import re
 import requests
 from typing import List, Dict, Optional,Union
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError

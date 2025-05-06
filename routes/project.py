@@ -8,7 +8,7 @@ from utils.logging_utils import logger
 
 project_router = APIRouter(prefix="/projects")
 
-@project_router.post("/create/")
+@project_router.post("/new/")
 def create_project_api(
     name: str = Query(...), 
     db: Session = Depends(get_db),
@@ -137,7 +137,7 @@ def delete_project_api(
         raise HTTPException(status_code=500, detail="Failed to delete project.")
 
 
-@project_router.get("/list/")
+@project_router.get("/")
 def list_projects_api(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -182,7 +182,7 @@ def list_projects_api(
         raise HTTPException(status_code=500, detail="Failed to list projects.")
 
 
-@project_router.get("/get/{project_id}/")
+@project_router.get("/{project_id}/")
 def get_project_by_id(
     project_id: int,
     db: Session = Depends(get_db),

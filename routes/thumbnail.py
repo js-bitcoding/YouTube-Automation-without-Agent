@@ -210,51 +210,51 @@ def get_my_thumbnails(
         logger.exception(f"Failed to retrieve thumbnails for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve thumbnails.")
 
-@thumbnail_router.post("/generate_thumbnail/")
-async def generate_thumbnail(
-    prompt: str = Form(...), 
-    image: UploadFile = File(...),
-    filename: str = Form(None),
-    user: User = Depends(get_current_user)
-    ):
-    """
-    Generates a thumbnail using a provided image and prompt with Stable Diffusion.
+# @thumbnail_router.post("/generate_thumbnail/")
+# async def generate_thumbnail(
+#     prompt: str = Form(...), 
+#     image: UploadFile = File(...),
+#     filename: str = Form(None),
+#     user: User = Depends(get_current_user)
+#     ):
+#     """
+#     Generates a thumbnail using a provided image and prompt with Stable Diffusion.
 
-    Args:
-        prompt (str): Text prompt for generating the thumbnail.
-        image (UploadFile): Image file to base the generation on.
-        filename (str, optional): Desired filename for the output thumbnail (should end with .png).
-        user (User): Current authenticated user.
+#     Args:
+#         prompt (str): Text prompt for generating the thumbnail.
+#         image (UploadFile): Image file to base the generation on.
+#         filename (str, optional): Desired filename for the output thumbnail (should end with .png).
+#         user (User): Current authenticated user.
 
-    Returns:
-        dict: Message indicating success and path of the generated thumbnail.
-    """
-    try:
-        contents = await image.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
+#     Returns:
+#         dict: Message indicating success and path of the generated thumbnail.
+#     """
+#     try:
+#         contents = await image.read()
+#         image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        pipe = StableDiffusionImg2ImgPipeline.from_pretrained("runwayml/stable-diffusion-v1-5").to(device)
+#         device = "cuda" if torch.cuda.is_available() else "cpu"
+#         pipe = StableDiffusionImg2ImgPipeline.from_pretrained("runwayml/stable-diffusion-v1-5").to(device)
         
-        result = pipe(prompt=prompt, image=image, strength=0.7).images[0]
+#         result = pipe(prompt=prompt, image=image, strength=0.7).images[0]
 
-        output_folder = GENERATED_THUMBNAILS_PATH
-        if not filename:
-            logger.warning(f"User {user.id} failed to generate thumbnail: filename is required.")
-            raise HTTPException(status_code=400, detail="Filename is required.")
+#         output_folder = GENERATED_THUMBNAILS_PATH
+#         if not filename:
+#             logger.warning(f"User {user.id} failed to generate thumbnail: filename is required.")
+#             raise HTTPException(status_code=400, detail="Filename is required.")
         
-        if not filename.lower().endswith(".png"):
-            filename += ".png"
+#         if not filename.lower().endswith(".png"):
+#             filename += ".png"
 
-        output_path = os.path.join(output_folder, filename)
-        result.save(output_path)
+#         output_path = os.path.join(output_folder, filename)
+#         result.save(output_path)
 
-        logger.info(f"User {user.id} generated a thumbnail with prompt '{prompt}' and saved as {filename}.")
-        return {
-            "message": "Image generated successfully.",
-            "output_path": output_path.replace("\\", "/")
-        }
+#         logger.info(f"User {user.id} generated a thumbnail with prompt '{prompt}' and saved as {filename}.")
+#         return {
+#             "message": "Image generated successfully.",
+#             "output_path": output_path.replace("\\", "/")
+#         }
 
-    except Exception as e:
-        logger.exception(f"Failed to generate thumbnail for user {user.id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate thumbnail.")
+#     except Exception as e:
+#         logger.exception(f"Failed to generate thumbnail for user {user.id}: {e}")
+#         raise HTTPException(status_code=500, detail="Failed to generate thumbnail.")

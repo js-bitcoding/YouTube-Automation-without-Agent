@@ -39,7 +39,7 @@ def get_all_conversations(db: Session = Depends(get_db), current_user: User = De
         raise HTTPException(status_code=500, detail="No Conversation Found")
 
 
-@chat_router.post("/create/")
+@chat_router.post("/chat/")
 def create_conversation(
     session_id: int,
     name: str,
@@ -97,7 +97,7 @@ def create_conversation(
         raise HTTPException(status_code=500, detail=f"Error creating conversation for Session ID {session_id}: {e}")
 
 
-@chat_router.put("/update/{conversation_id}/")
+@chat_router.put("/{conversation_id}/")
 def update_conversation_name(
     conversation_id: int,
     name: str,
@@ -141,7 +141,7 @@ def update_conversation_name(
         raise HTTPException(status_code=500, detail=f"Error updating conversation ID {conversation_id}: {e}")
 
 
-@chat_router.get("/get/{conversation_id}/")
+@chat_router.get("/{conversation_id}/")
 def get_conversation_by_id(
     conversation_id: int,
     db: Session = Depends(get_db),
@@ -194,7 +194,7 @@ def get_conversation_by_id(
         raise HTTPException(status_code=500, detail=f"Error retrieving conversation ID {conversation_id}: {e}")
 
 
-@chat_router.delete("/delete/{conversation_id}/")
+@chat_router.delete("/{conversation_id}/")
 def delete_conversation(
     conversation_id: int,
     db: Session = Depends(get_db),
@@ -232,7 +232,7 @@ def delete_conversation(
         raise HTTPException(status_code=500, detail=f"Error deleting conversation ID {conversation_id}: {e}")
 
 
-@chat_router.post("/generate_group_response")
+@chat_router.post("/generate_group_response/")
 def generate_group_response(
     conversation_id: int,
     user_prompt: str,

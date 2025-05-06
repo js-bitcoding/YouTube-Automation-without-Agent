@@ -84,7 +84,6 @@ def save_video(
     try:
         print(f"Saving video {video_id} for user {user.id}")
 
-        # Fetch video details
         video_details = fetch_video_by_id(video_id)
         if "error" in video_details:
             raise HTTPException(status_code=404, detail="Video not found")
@@ -133,20 +132,17 @@ def save_video(
         else:
             video = existing_video
 
-        # Check if the video has already been saved by the user
         existing_entry = (
             db.query(UserSavedVideo)
             .filter(UserSavedVideo.user_id == user.id, UserSavedVideo.video_id == video_id)
             .first()
         )
 
-        # If the video is soft deleted, remove the entry
         if existing_entry and existing_entry.is_deleted is not None:
             db.delete(existing_entry)
             db.commit()
             print(f"Soft-deleted entry for video {video_id} removed")
 
-        # Check again if the video is saved by the user after soft delete (or if it was never saved)
         existing_entry = (
             db.query(UserSavedVideo)
             .filter(UserSavedVideo.user_id == user.id, UserSavedVideo.video_id == video_id)
@@ -166,9 +162,8 @@ def save_video(
         return {"message": "Video saved successfully!", "video_id": video_id}
 
     except HTTPException as e:
-        # Handle HTTPException (e.g., 404 not found, 400 bad request)
         print(f"HTTP Exception occurred: {e.detail}")
-        raise e  # Re-raise the HTTPException
+        raise e
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
@@ -216,7 +211,7 @@ def get_saved_videos(db: Session = Depends(get_db), user: User = Depends(get_cur
         print(f"Error fetching saved videos for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch saved videos")
 
-@router.delete("/video/save/{video_id}")
+@router.delete("/video/{video_id}")
 def delete_saved_video(
     video_id: str,
     db: Session = Depends(get_db),

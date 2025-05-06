@@ -1,4 +1,3 @@
-from datetime import datetime
 from fastapi import HTTPException, Depends, status
 from functionality.jwt_token import decodeJWT
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

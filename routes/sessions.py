@@ -114,7 +114,7 @@ def get_session_by_id(
 
 
 
-@sessions_router.post("/create/")
+@sessions_router.post("/new/")
 def create_session_api(
     name: str = Query(...),
     group_ids: List[int] = Query(default=[]),
@@ -207,7 +207,7 @@ def create_session_api(
         logger.exception(f"Failed to create chat session for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to create session.")
 
-@sessions_router.delete("/delete/")
+@sessions_router.delete("/{session_id}/")
 def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Marks a chat session as deleted for the authenticated user.
@@ -225,7 +225,6 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
             - If the session is not found or the user is unauthorized to delete the session.
     """
     try:
-        # Validate and fetch the session
         session = db.query(ChatSession).join(chat_session_group).join(Group).filter(
             ChatSession.id == session_id,
             Group.user_id == current_user.id
@@ -235,12 +234,10 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
             logger.error(f"Unauthorized access or session not found: {session_id} for User ID {current_user.id}")
             raise HTTPException(status_code=404, detail="Session not found or access denied.")
 
-        # Delete related conversations
         conversations = db.query(ChatConversation).filter(ChatConversation.chat_session_id == session_id).all()
         for convo in conversations:
             db.delete(convo)
 
-        # Mark the session as deleted (or delete it hard if preferred)
         session.is_deleted = True
         db.commit()
 
@@ -248,14 +245,14 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
         return {"message": "Session and associated conversations successfully deleted."}
 
     except HTTPException:
-        raise  # Re-raise known exceptions
+        raise
     except Exception as e:
         logger.exception(f"Failed to delete session {session_id} and conversations for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: Failed to delete session and conversations.")
 
 
 
-@sessions_router.put("/update/{session_id}/")
+@sessions_router.put("/{session_id}/")
 def update_session_api(
     session_id: int,
     name: Optional[str] = Query(default=None),
@@ -292,7 +289,6 @@ def update_session_api(
 
         updated = False
 
-        # Update name if provided
         if name is not None:
             name = name.strip()
             if not name:
@@ -300,7 +296,6 @@ def update_session_api(
             session.name = name
             updated = True
 
-        # Update groups if provided
         if group_ids is not None:
             if not all(isinstance(gid, int) for gid in group_ids):
                 raise HTTPException(status_code=422, detail="All group IDs must be integers.")

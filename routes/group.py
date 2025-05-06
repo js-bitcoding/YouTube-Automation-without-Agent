@@ -1,4 +1,3 @@
-import datetime
 from typing import List
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -13,12 +12,12 @@ from service.group_service import (
 )
 from service.chat_ai_agent_service import initialize_chroma_store
 from database.db_connection import get_db
-from database.models import Group, Document,  Project, User,YouTubeVideo
+from database.models import Group, Document,  Project, User, YouTubeVideo, timezone
 from utils.logging_utils import logger
 
 group_router = APIRouter(prefix="/groups")
 
-@group_router.post("/create_empty/")
+@group_router.post("/empty/")
 async def create_empty_group(
     project_id: str = Query(...),
     name: str = Form("Untitled Group"),
@@ -60,7 +59,7 @@ async def create_empty_group(
             name=name,
             user_id=current_user.id,
             project_id=project_id,
-            created_time=datetime.datetime.now()
+            created_time=timezone
         )
 
         db.add(new_group)
@@ -124,7 +123,7 @@ def update_group_api(
         raise HTTPException(status_code=500, detail=f"Unexpected error while updating group {group_id}: {e}")
 
 
-@group_router.put("/update-content")
+@group_router.put("/content")
 async def update_group_content(
     project_id: int,
     group_id: int,
@@ -226,7 +225,7 @@ async def update_group_content(
         logger.exception(f"Unexpected error updating content for group {group_id} under project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=f"You cannot update this group content {e}")
     
-@group_router.delete("/delete-content")
+@group_router.delete("/content")
 async def delete_group_content(
     project_id: int = Query(...),
     group_id: int = Query(...),

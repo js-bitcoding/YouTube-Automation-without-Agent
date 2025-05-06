@@ -1,4 +1,3 @@
-import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
 from database.models import ChatConversation, ChatSession, Group, timezone

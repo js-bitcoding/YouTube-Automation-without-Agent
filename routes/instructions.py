@@ -10,7 +10,7 @@ from utils.logging_utils import logger
 from fastapi.responses import JSONResponse
 instruction_router = APIRouter(prefix="/instruction")
 
-@instruction_router.post("/create/", response_model=InstructionOut)
+@instruction_router.post("/new/", response_model=InstructionOut)
 def create_instruction(
      instruction: InstructionBase = Depends(InstructionBase.as_form),
     db: Session = Depends(get_db),
@@ -72,7 +72,7 @@ def create_instruction(
         logger.error(f"Unexpected error occurred: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
-@instruction_router.put("/update/{instruction_id}/", response_model=InstructionOut)
+@instruction_router.put("/{instruction_id}/", response_model=InstructionOut)
 def update_instruction(
     instruction_id: int,
     update_data: InstructionUpdate,
@@ -148,7 +148,7 @@ def update_instruction(
 
 
 
-@instruction_router.delete("/delete/{instruction_id}/")
+@instruction_router.delete("/{instruction_id}/")
 def delete_instruction(
     instruction_id: int,
     db: Session = Depends(get_db),
@@ -195,7 +195,7 @@ def delete_instruction(
         logger.error(f"Unexpected error occurred: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
-@instruction_router.get("/get/", response_model=List[InstructionOut])
+@instruction_router.get("/", response_model=List[InstructionOut])
 def get_my_instructions(
     db: Session = Depends(get_db),
     user: User = Depends(admin_only)
@@ -235,7 +235,7 @@ def get_my_instructions(
         logger.error(f"Unexpected error occurred: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred while get the instruction"})
 
-@instruction_router.get("/get/{instruction_id}/", response_model=InstructionOut)
+@instruction_router.get("/{instruction_id}/", response_model=InstructionOut)
 def get_instruction_by_id(
     instruction_id: int,
     db: Session = Depends(get_db),

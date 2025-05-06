@@ -54,7 +54,7 @@ def get_titles(
         logger.exception(f"Unexpected error in request by user {user.id}: {outer_exception}")
         raise HTTPException(status_code=500, detail="Internal server error during title generation.")
 
-@router.get("/user_titles/")
+@router.get("/titles/")
 def get_user_titles(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -129,7 +129,7 @@ def get_user_titles(
         logger.exception(f"Error occurred while fetching grouped titles for user {user.id}: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving titles.")
     
-@router.delete("/delete_title/")
+@router.delete("/title/")
 def delete_title(
     title_id: int,
     db: Session = Depends(get_db),

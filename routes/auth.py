@@ -1,5 +1,3 @@
-from datetime import datetime
-from fastapi import status
 from sqlalchemy.orm import Session
 from utils.logging_utils import logger
 from fastapi.security import HTTPBearer
