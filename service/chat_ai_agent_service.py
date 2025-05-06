@@ -360,13 +360,8 @@ The following is background information from the user’s list of groups based o
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Conversation Not Found")
     
     except Exception as e:
         logger.error(f"[Error] Failed to retrieve vectorstore for {collection_name}: {e}")
         logger.warning(f"[Warning] Skipping group {group_id}. Possibly missing ChromaDB or no data.")
-
-
-
-
-
