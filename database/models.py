@@ -1,8 +1,9 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.mutable import MutableList
+from sqlalchemy.dialects.postgresql import JSONB 
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, String, Integer, Text, DateTime, func, JSON, ForeignKey, Boolean, Float, BigInteger, Table
 
 timezone = datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -188,7 +189,7 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=True)
-    content = Column(Text, nullable=False)
+    meta_data = Column(JSONB, default={}) 
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
     tone = Column(String)  
     style = Column(String)
@@ -202,7 +203,7 @@ class YouTubeVideo(Base):
     __tablename__ = "youtube_videos"
     id = Column(Integer, primary_key=True, index=True)
     url = Column(String)
-    transcript = Column(Text)  
+    meta_data = Column(JSONB, default={})  
     tone = Column(String)  
     style = Column(String)  
     created_at = Column(DateTime, default=timezone)

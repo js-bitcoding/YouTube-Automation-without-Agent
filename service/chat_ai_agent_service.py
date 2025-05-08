@@ -75,7 +75,7 @@ def split_text_with_recursive_splitter(text: str, chunk_size: int = 1000, chunk_
     # Truncate to a maximum number of chunks
     return all_chunks[:max_chunks]
 
-def initialize_chroma_store(group_data: dict, collection_name: str):
+def initialize_chroma_store(group_data: dict, collection_name: str,db: Session):
     try:
         
         if "group_id" not in group_data:
@@ -88,9 +88,43 @@ def initialize_chroma_store(group_data: dict, collection_name: str):
         # Split into max 10 chunks using equal size method
         raw_chunks = split_text_with_recursive_splitter(combined_text, max_chunks=10)
         all_chunks = [
-    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"],"chunk_index": idx})
-    for idx, chunk in enumerate(raw_chunks)
-]
+    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"],"chunk_index": idx, "is_deleted": False })
+    for idx, chunk in enumerate(raw_chunks)] 
+#         all_chunks = []
+
+# # Process documents
+#         for doc_info in group_data["document_sources"]:
+#             content = ...  # get the corresponding content for this document
+#             chunks = split_text_with_recursive_splitter(content, max_chunks=10)
+#             for idx, chunk in enumerate(chunks):
+#                 metadata = {
+#             "group_id": group_data["group_id"],
+#             "project_id": group_data["project_id"],
+#             "chunk_index": idx,
+#             "source_type": "document",
+#             "document_id": doc_info["id"],
+#             "is_deleted": False,
+#             "timestamp": datetime.datetime.now().isoformat()
+#         }
+#             all_chunks.append(LangchainDocument(page_content=chunk, metadata=metadata))
+
+#         # Process YouTube videos
+#         for vid_info in group_data["video_sources"]:
+#             transcript = ...  # get corresponding transcript
+#             chunks = split_text_with_recursive_splitter(transcript, max_chunks=5)
+#             for idx, chunk in enumerate(chunks):
+#                 metadata = {
+#             "group_id": group_data["group_id"],
+#             "project_id": group_data["project_id"],
+#             "chunk_index": idx,
+#             "source_type": "video",
+#             "youtube_video_id": vid_info["youtube_video_id"],
+#             "video_id": vid_info["id"],
+#             "is_deleted": False,
+#             "timestamp": datetime.datetime.now().isoformat()
+#         }
+#             all_chunks.append(LangchainDocument(page_content=chunk, metadata=metadata))
+    
 
         for i, chunk in enumerate(all_chunks):
             logger.info(f" Chunk {i+1}/{len(all_chunks)}: {len(chunk.page_content)} characters")
@@ -113,6 +147,29 @@ def initialize_chroma_store(group_data: dict, collection_name: str):
 
         vectorstore.persist()
         logger.info(f"✅ Chroma collection '{collection_name}' created and persisted successfully with {len(all_chunks)} chunks.")
+        
+        
+        chunk_metadata = {
+            "chunk_count": len(all_chunks),
+            "average_chunk_length": sum(len(c.page_content) for c in all_chunks) // len(all_chunks),
+            "embedding_vector_length": len(embedding[0]) if embedding and embedding[0] else 0,
+            "collection_name": collection_name,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+
+        
+        
+        saved_docs = db.query(Document).filter(Document.group_id == group_data["group_id"]).all()
+        for doc in saved_docs:
+            doc.meta_data = chunk_metadata
+
+        # Store metadata into the videos
+        saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_data["group_id"]).all()
+        for vid in saved_videos:
+            vid.meta_data = chunk_metadata
+
+        db.commit()  # Commit all changes to the database
+        
         return vectorstore, all_chunks, collection_name, embedding
 
     except Exception as e:
@@ -173,16 +230,16 @@ def format_chunks_for_prompt(all_chunks, group_id_map):
         cleaned_content = re.sub(r"^Formatted content for[^\n]*\n*", "", content, flags=re.IGNORECASE).strip()
 
         group_id = chunk.metadata.get("group_id")
-        group_label = group_id_map.get(group_id, f"Group {group_id}" if group_id else "Unknown Group")
+        group_label = group_id_map.get(group_id, f"GROUP {group_id}" if group_id else "Unknown Group")
 
         if cleaned_content not in grouped_contents[group_id]:
             grouped_contents[group_id].append(cleaned_content)
 
     formatted = []
     for group_id, contents in grouped_contents.items():
-        group_label = group_id_map.get(group_id, f"Group {group_id}")
+        group_label = group_id_map.get(group_id, f"GROUP {group_id}")
         group_text = "\n\n".join(contents)
-        formatted.append(f"Formatted content for {group_label}\n\n{group_text}")
+        formatted.append(f"{group_label} SCRIPT \n\n{group_text}")
         print()
     return "\n\n---\n\n".join(formatted)
 
@@ -220,8 +277,16 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
             collection_name = f"project_{project_ids[0]}_group_{group_id}"
             try:
                 vectorstore = retrieve_vectorstore_from_chromadb(collection_name)
-                chunks = vectorstore.similarity_search(user_prompt, k=20)
+                raw_chunks = vectorstore.similarity_search(user_prompt, k=50)
+
+
+                chunks = [
+                            c for c in raw_chunks
+                            if not c.metadata.get("is_deleted", True)
+                ]
+                
                 chunks = sorted(chunks, key=lambda c: c.metadata.get("chunk_index", 0))
+
                 if chunks:
                     print(f"[Debug] Retrieved {len(chunks)} chunks from {collection_name}")
                     
@@ -268,48 +333,54 @@ def generate_response_for_conversation(conversation_id: int, user_prompt: str, d
         instructions = db.query(Instruction).filter(Instruction.is_deleted == False, Instruction.is_activate == True).all()
         instructions_info = "\n".join([f"Instruction: {instr.content}" for instr in instructions])
         print("Formated Chunks",formatted_chunks)
-
+        print("Group Info",group_info)
         system_prompt = f"""
-You are a YouTube automation assistant helping creators repurpose and remix content from PDFs and videos into engaging scripts, captions, or short-form ideas. 
+You’re a YouTube content assistant helping creators turn their content — scripts, PDFs, or video transcripts — into powerful, audience-ready scripts, captions, or short-form ideas.
 
-## OBJECTIVE:
-Based on the user's query, select the most relevant content group (e.g. video script templates, business PDFs, or content breakdowns). Your job is to generate a clear, engaging, and audience-tailored script or content piece that feels original and useful — not copied.
+---
+
+## WHAT TO DO:
+Your job is to take what the user asks, select the most relevant content group (or the one they mention), and remix it into something fresh, original, and emotionally compelling.
+
+Use ONLY the group the user refers to, if one is mentioned. If no group is named, use your judgment to select the best-fitting group(s) below.
+
+---
 
 ## USER QUERY:
-{user_prompt}
+"{user_prompt.strip()}"
 
-## CONTENT SOURCES (PDFs, Video Transcripts, or Documents):
-## IMPORTANT: If the user query references a specific group (e.g. "Group 2"), use only that group's content — ignore all others, even if present.
-{group_reference_note}
+---
 
-The following is background information from the user’s list of groups based on the query above. Use it to understand the broader context:
+## AVAILABLE GROUPS:
 {formatted_chunks}
 
-## GROUP TONE(S):
+---
+
+## USE THIS STRUCTURE FOR VIDEO SCRIPTS:
+
+[HOOK] – Open with something strong or emotional  
+[INSIGHT] – Highlight the core message  
+[PROOF or STORY] – Add an example, detail, or real moment  
+[CTA] – End with a question, challenge, or call to action
+
+---
+
+## TONE:
 {", ".join(group_info["tones"]) or "Neutral"}
 
-## GROUP STYLE(S):
-{", ".join(group_info["styles"]) or "Plain"}
+## STYLE:
+{", ".join(group_info["styles"]) or "Direct, spoken-word"}
 
 ## CHAT HISTORY:
 {history_prompt}
 
-## INSTRUCTIONS:
+## SPECIAL NOTES:
 {instructions_info}
 
 ---
 
-## OUTPUT RULES:
-- Focus only on relevant source groups based on the user’s request.
-- Rewrite key concepts using a fresh tone, hook, or format.
-- If asked for a video script, structure output as:
-  [HOOK] → [VALUE] → [EXAMPLES/PROOF] → [CTA]
-- Avoid repeating content verbatim unless explicitly requested.
-- You can draw from both documents and video transcripts but remix them creatively.
-
----
-
-## FINAL OUTPUT:
+## FINAL INSTRUCTIONS:
+Write the final output directly. Do not explain what you’re doing. Do not include notes or refer to other groups. Just deliver a finished script or content piece based on the user's request.
 """
 
         response = llm.invoke([
@@ -355,7 +426,7 @@ The following is background information from the user’s list of groups based o
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        raise HTTPException(status_code=404, detail=f"Conversation Not Found")
     
     except Exception as e:
         logger.error(f"[Error] Failed to retrieve vectorstore for {collection_name}: {e}")

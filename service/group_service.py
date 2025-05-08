@@ -10,15 +10,21 @@ from service.script_service import (
     analyze_transcript_style,
 )
 from utils.logging_utils import logger
+from chromadb import Client
+from chromadb import PersistentClient
+
+
+chroma_client = PersistentClient(path="./chroma_db") 
 
 async def process_group_content(
-    project_id: int,
     group_id: Optional[int],
     files: List[UploadFile],
     youtube_links: List[str],
     db: Session,
     current_user: User
 ) -> dict:
+    group = None
+    project_id = None
     """
     Processes uploaded files and YouTube links, extracting relevant content and storing it in the database.
 
@@ -39,7 +45,7 @@ async def process_group_content(
     Raises:
         HTTPException: If the group is not found for the given project.
     """
-    results = {"documents": [], "videos": []}
+    results = {"documents": [],"youtube_transcripts": [], "document_texts": [], "videos": []}
 
     if group_id == 0:
         try:
@@ -56,7 +62,14 @@ async def process_group_content(
         except Exception as e:
             logger.error(f"Failed to create new group: {e}")
             raise HTTPException(status_code=500, detail="Failed to create new group.")
-
+    else:
+        group = db.query(Group).filter(Group.id == group_id).first()
+        if not group or group.user_id != current_user.id:
+            logger.error(f"Group with ID {group_id} not found for user {current_user.id}.")
+            raise HTTPException(status_code=404, detail="Group not found.")
+        
+        project_id = group.project_id
+        
     try:
         group = db.query(Group).filter(Group.id == group_id, Group.project_id == project_id).first()
         if not group:
@@ -97,13 +110,21 @@ async def process_group_content(
 
                 cleaned_text = " ".join(extracted_text.split())
 
-                analysis = analyze_transcript_style(extracted_text)
-                tone = analysis.get("tone", "Unknown")
-                style = analysis.get("style", "Unknown")
+                try:
+                    analysis = analyze_transcript_style(cleaned_text)
+                    if not isinstance(analysis, dict):
+                        raise ValueError("Transcript analysis returned invalid data.")
+                    tone = analysis.get("tone", "Unknown")
+                    style = analysis.get("style", "Unknown")
+                except Exception as e:
+                    logger.error(f"Error analyzing transcript style: {e}")
+                    tone = "Unknown"
+                    style = "Unknown"
+
 
                 doc_entry = Document(
                     filename=file.filename,
-                    content=cleaned_text,
+                    # content=file.filename,
                     tone=tone,
                     style=style,
                     group_id=group_id
@@ -112,6 +133,8 @@ async def process_group_content(
                 db.commit()
                 db.refresh(doc_entry)
 
+                results["document_texts"].append(cleaned_text)
+                
                 results["documents"].append({
                 "filename": file.filename,
                 "message": "Uploaded and extracted successfully"
@@ -133,14 +156,20 @@ async def process_group_content(
                         "error": f"Transcript extraction failed: {err}"
                     })
                     continue
-                analysis = analyze_transcript_style(transcript)
-                tone = analysis.get("tone", "Unknown")
-                style = analysis.get("style", "Unknown")
+                
+                try:
+                    analysis = analyze_transcript_style(transcript)
+                    tone = analysis.get("tone", "Unknown")
+                    style = analysis.get("style", "Unknown")
+                except Exception as e:
+                    logger.error(f"Error analyzing transcript style: {e}")
+                    tone = "Unknown"
+                    style = "Unknown"
 
                 youtube_entry = YouTubeVideo(
                     url=link,
                     group_id=group_id,
-                    transcript=transcript,
+                    # transcript=link,
                     tone=tone,
                     style=style,
                     is_deleted=False
@@ -148,7 +177,7 @@ async def process_group_content(
                 db.add(youtube_entry)
                 db.commit()
                 db.refresh(youtube_entry)
-
+                results["youtube_transcripts"].append(transcript)
                 results["videos"].append({
                     "video_url": link,
                     "message": "Transcript extracted and link saved",
@@ -253,21 +282,116 @@ def delete_group(db: Session, group_id: int, user_id: int):
         db.rollback()
         return None
 
-def get_user_groups_with_content(user_id: int, db: Session):
+#old
+# def get_user_groups_with_content(user_id: int, db: Session):
+#     """
+#     Retrieves all active groups for a user along with associated documents and videos.
+
+#     Args:
+#         user_id (int): ID of the user for whom to fetch groups.
+#         db (Session): Database session.
+
+#     Returns:
+#         list: A list of groups, each with their associated documents and videos.
+
+#     Raises:
+#         HTTPException: If no groups are found for the user.
+#     """
+#     try:
+#         groups = db.query(Group).filter(
+#             Group.user_id == user_id,
+#             Group.is_deleted == False
+#         ).all()
+
+#         if not groups:
+#             raise HTTPException(status_code=404, detail="No groups found for this user.")
+
+#         group_list = []
+#         for group in groups:
+#             documents = db.query(Document).filter(Document.group_id == group.id).all()
+#             videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group.id).all()
+
+#             group_list.append({
+#                 "group_id": group.id,
+#                 "group_name": group.name,
+#                 "project_id": group.project_id,
+#                 "documents": [
+#                     {   "document id": doc.id,
+#                         "filename": doc.filename, "content_snippet": doc.content} for doc in documents
+#                 ],
+#                 "videos": [
+#                     {
+#                         "videos id": vid.id,
+#                         "video_url": vid.url,
+#                         "transcript_excerpt": vid.transcript,
+#                         "tone": vid.tone,
+#                         "style": vid.style
+#                     }
+#                     for vid in videos
+#                 ]
+#             })
+
+#         return group_list
+#     except Exception as e:
+#         logger.error(f"Error retrieving groups for user {user_id}: {e}")
+#         raise HTTPException(status_code=500, detail="Error retrieving groups.")
+
+
+def fetch_all_chroma_documents(project_id: int, group_id: int) -> list:
     """
-    Retrieves all active groups for a user along with associated documents and videos.
+    Fetches all non-deleted document and transcript chunks for a group from ChromaDB.
 
     Args:
-        user_id (int): ID of the user for whom to fetch groups.
+        project_id (int): ID of the project.
+        group_id (int): ID of the group.
+
+    Returns:
+        list: List of content strings (documents/transcripts) stored in ChromaDB.
+    """
+    collection_name = f"project_{project_id}_group_{group_id}"
+
+    try:
+        collection = chroma_client.get_collection(name=collection_name)
+        if collection is None:
+            logger.warning(f"Collection '{collection_name}' does not exist.")
+            return []
+
+        # Fetch both documents and metadata
+        items = collection.get(include=["documents", "metadatas"])
+
+        if not isinstance(items, dict) or "documents" not in items or "metadatas" not in items:
+            logger.warning(f"Unexpected structure in ChromaDB collection '{collection_name}': {items}")
+            return []
+
+        documents = items["documents"]
+        metadatas = items["metadatas"]
+
+        # Combine documents and metadata, filter out deleted ones
+        filtered_docs = [
+            doc for doc, meta in zip(documents, metadatas)
+            if not meta.get("is_deleted", False)
+        ]
+
+        return filtered_docs
+
+    except Exception as e:
+        logger.warning(f"Could not fetch documents from ChromaDB collection '{collection_name}': {e}")
+        return []
+
+#new
+def get_user_groups_with_content(user_id: int, db: Session):
+    """
+    Retrieves all active groups for a user along with their content from ChromaDB and Postgres.
+
+    Args:
+        user_id (int): User ID.
         db (Session): Database session.
 
     Returns:
-        list: A list of groups, each with their associated documents and videos.
-
-    Raises:
-        HTTPException: If no groups are found for the user.
+        dict: Groups with content from ChromaDB and Postgres.
     """
     try:
+        # Fetch groups from Postgres for the user
         groups = db.query(Group).filter(
             Group.user_id == user_id,
             Group.is_deleted == False
@@ -278,30 +402,56 @@ def get_user_groups_with_content(user_id: int, db: Session):
 
         group_list = []
         for group in groups:
-            documents = db.query(Document).filter(Document.group_id == group.id).all()
-            videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group.id).all()
+            # Fetch shared ChromaDB content for the group
+            chroma_docs = fetch_all_chroma_documents(group.project_id, group.id)
 
-            group_list.append({
+            # Prepare base structure for the group
+            group_content = {
                 "group_id": group.id,
                 "group_name": group.name,
                 "project_id": group.project_id,
-                "documents": [
-                    {   "document id": doc.id,
-                        "filename": doc.filename, "content_snippet": doc.content} for doc in documents
-                ],
-                "videos": [
-                    {
-                        "videos id": vid.id,
-                        "video_url": vid.url,
-                        "transcript_excerpt": vid.transcript,
-                        "tone": vid.tone,
-                        "style": vid.style
-                    }
-                    for vid in videos
-                ]
-            })
+                "documents": [],
+            }
+
+            # Fetch and append documents from Postgres
+            documents = db.query(Document).filter(
+                Document.group_id == group.id,
+                Document.is_deleted == False
+            ).all()
+
+            for doc in documents:
+                group_content["documents"].append({
+                    "filename": doc.filename,
+                    "tone": doc.tone or "Unknown",
+                    "style": doc.style or "Unknown",
+                    "content": chroma_docs  # Add ChromaDB content
+                })
+
+            # Fetch and append YouTube videos from Postgres
+            youtube_links = db.query(YouTubeVideo).filter(
+                YouTubeVideo.group_id == group.id,
+                YouTubeVideo.is_deleted == False
+            ).all()
+
+            if youtube_links:
+                group_content["youtube_links"] = []
+                for youtube in youtube_links:
+                    # Fetching the transcript properly from ChromaDB
+                    video_transcript = fetch_all_chroma_documents(group.project_id, group.id)
+                    
+                    group_content["youtube_links"].append({
+                        "url": youtube.url,
+                        "tone": youtube.tone or "Unknown",
+                        "style": youtube.style or "Unknown",
+                        "transcript": video_transcript  # Now this will contain the actual transcript content
+                    })
+
+            group_list.append(group_content)
 
         return group_list
+    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error retrieving groups for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving groups.")

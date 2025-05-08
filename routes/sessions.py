@@ -123,70 +123,68 @@ def create_session_api(
 ):
     """
     Creates a new chat session and its associated conversation for the authenticated user, 
-    linking it to the specified groups.
+    optionally linking it to specified groups.
 
     Args:
-        payload (ChatCreate): The data for creating a new chat session, including group IDs.
+        name (str): Name of the chat session.
+        group_ids (List[int], optional): List of group IDs to associate (can be empty).
         db (Session): SQLAlchemy DB session.
         current_user (User): The authenticated user creating the chat session.
 
     Returns:
-        dict: A dictionary containing the chat session ID, conversation ID, and associated group IDs.
-
-    Raises:
-        HTTPException:
-            - If no valid groups are found for the authenticated user.
+        dict: Contains chat session ID, conversation ID, and associated group IDs.
     """
     try:
         if not name.strip():
             logger.error(f"User ID {current_user.id} tried to create a session with an empty name.")
             raise HTTPException(status_code=422, detail="Chat session name cannot be empty")
-        
-        if not group_ids:
-            logger.error(f"User ID {current_user.id} did not provide any group IDs.")
-            raise HTTPException(status_code=422, detail="At least one group ID must be provided")
 
         if not all(isinstance(gid, int) for gid in group_ids):
             logger.error(f"User ID {current_user.id} provided invalid group IDs: {group_ids}")
             raise HTTPException(status_code=422, detail="All group IDs must be integers")
-        
+
         unique_group_ids = list(set(group_ids))
-        logger.info(f"Creating chat session with groups: {unique_group_ids} for User ID {current_user.id}")
+        groups = []
 
-        groups = db.query(Group).filter(Group.id.in_(unique_group_ids), Group.user_id == current_user.id).all()
+        if unique_group_ids:
+            logger.info(f"Creating chat session with groups: {unique_group_ids} for User ID {current_user.id}")
 
-        valid_group_ids = {group.id for group in groups}
-        invalid_group_ids = set(unique_group_ids) - valid_group_ids
+            groups = db.query(Group).filter(
+                Group.id.in_(unique_group_ids),
+                Group.user_id == current_user.id
+            ).all()
 
-        if invalid_group_ids:
-            logger.warning(f"Invalid group IDs for User ID {current_user.id}: {invalid_group_ids}")
-            raise HTTPException(
-        status_code=400,
-        detail=f"Invalid group IDs: {list(invalid_group_ids)}"
-        )
+            valid_group_ids = {group.id for group in groups}
+            invalid_group_ids = set(unique_group_ids) - valid_group_ids
 
-        if not groups:
-            logger.warning(f"No valid groups found for User ID {current_user.id}")
-            raise HTTPException(status_code=400, detail="No valid groups found for the user")
-        active_instruction = db.query(Instruction).filter(
-        Instruction.is_activate == True,
-        Instruction.is_deleted == False
-        ).first()
-        chat_session = ChatSession(
-            name=name,
-        )
+            if invalid_group_ids:
+                logger.warning(f"Invalid group IDs for User ID {current_user.id}: {invalid_group_ids}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid group IDs: {list(invalid_group_ids)}"
+                )
+
+        # Create chat session
+        chat_session = ChatSession(name=name)
         db.add(chat_session)
         db.commit()
         db.refresh(chat_session)
 
-        chat_session.groups.extend(groups)
-        db.commit()
+        if groups:
+            chat_session.groups.extend(groups)
+            db.commit()
 
+        # Get active instruction
+        active_instruction = db.query(Instruction).filter(
+            Instruction.is_activate == True,
+            Instruction.is_deleted == False
+        ).first()
+
+        # Create chat conversation
         chat_conversation = ChatConversation(
             name="My Conversation",
             chat_session_id=chat_session.id,
             instruction_id=active_instruction.id if active_instruction else None
-
         )
         db.add(chat_conversation)
         db.commit()
@@ -200,9 +198,8 @@ def create_session_api(
         }
 
     except HTTPException as e:
-        logger.exception(f"Failed to Create session : {e}")
+        logger.exception(f"Failed to create session: {e}")
         raise e
-
     except Exception as e:
         logger.exception(f"Failed to create chat session for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to create session.")

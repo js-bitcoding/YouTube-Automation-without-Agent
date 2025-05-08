@@ -1,9 +1,11 @@
 import datetime
 from typing import List
-from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from fastapi.responses import JSONResponse
+from langchain_community.vectorstores import Chroma
+from langchain_ollama import OllamaEmbeddings
 from functionality.current_user import get_current_user
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Query
 from service.group_service import (
     get_user_groups_with_content, 
     update_group, 
@@ -17,6 +19,10 @@ from database.models import Group, Document,  Project, User,YouTubeVideo
 from utils.logging_utils import logger
 
 group_router = APIRouter(prefix="/groups")
+
+ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text")
+
+persist_dir = "./chroma_db"
 
 @group_router.post("/create_empty/")
 async def create_empty_group(
@@ -55,7 +61,17 @@ async def create_empty_group(
         if not project:
             logger.warning(f"Project with ID {project_id} not found for user {current_user.id}")
             raise HTTPException(status_code=400, detail="Project not found.")
+        existing_group = db.query(Group).filter(
+        Group.project_id == project_id,
+        Group.name == name, 
+        Group.is_deleted == False  # optional: if soft delete is implemented
+        ).first()
 
+        if existing_group:
+            raise HTTPException(
+        status_code=400,
+        detail=f"A group with the name '{name}' already exists in this project."
+    )
         new_group = Group(
             name=name,
             user_id=current_user.id,
@@ -126,13 +142,14 @@ def update_group_api(
 
 @group_router.put("/update-content")
 async def update_group_content(
-    project_id: int,
     group_id: int,
     files: List[UploadFile] = File(None),
     youtube_links: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> dict:
+    project_id = None
+    group = None  #
     """
     Process uploaded documents and YouTube links for a group and store them in vector DB.
 
@@ -147,27 +164,22 @@ async def update_group_content(
     Returns:
         dict: Contains the list of documents and videos added to the group.
     """
+    
     try:
-        logger.info(f"Updating content for group {group_id} under project {project_id} by user {current_user.id}")
-
-        project = db.query(Project).filter(
-            Project.id == project_id,
-            Project.user_id == current_user.id,
-            Project.is_deleted == False
-        ).first()
-        if not project:
-            logger.error(f"Project {project_id} not found for user {current_user.id}")
-            raise HTTPException(status_code=400, detail="Project not found.")
-
+        # Fetch the group for validation
         group = db.query(Group).filter(
             Group.id == group_id,
-            Group.project_id == project_id,
+            Group.user_id == current_user.id,
             Group.is_deleted == False
         ).first()
+
         if not group:
-            logger.warning(f"Group {group_id} not found under project {project_id}")
+            logger.warning(f"Group {group_id} not found for this user")
             raise HTTPException(status_code=404, detail="Group not found.")
 
+        project_id = group.project_id  # ✅ Safe now
+
+        # Process files and YouTube links as usual
         if files is None:
             files = []
 
@@ -178,40 +190,54 @@ async def update_group_content(
             raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
         results = await process_group_content(
-            project_id=project_id,
             group_id=group_id,
             files=valid_files,
             youtube_links=valid_links,
             db=db,
             current_user=current_user
         )
+        saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
+        saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
 
         if not results.get("documents") and not results.get("videos"):
             logger.warning("Process returned no documents or videos")
             raise HTTPException(status_code=400, detail="No valid documents or YouTube links processed.")
 
-        saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
-        document_texts = [doc.content for doc in saved_documents if doc.content]
+        # saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
+        # document_texts = [doc.content for doc in saved_documents if doc.content]
 
-        saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
-        youtube_transcripts = [video.transcript for video in saved_videos if video.transcript]
-        
+        # saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
+        # youtube_transcripts = [video.transcript for video in saved_videos if video.transcript]
+        document_texts = results.get("document_texts", [])
+        youtube_transcripts = results.get("youtube_transcripts", [])
         mixed_content = document_texts + youtube_transcripts
+
+        if not all(isinstance(item, str) for item in mixed_content):
+            logger.error("One or more items in mixed_content are not valid strings.")
+            raise HTTPException(status_code=400, detail="Content contains invalid data.")
 
         if not mixed_content:
             logger.warning("No content found to embed into ChromaDB.")
             raise HTTPException(status_code=400, detail="❌ No content available for ChromaDB storage.")
 
+        # group_data = {
+        #     "group_id": group.id,
+        #     "formatted": f"Formatted content for the group {group_id} ",
+        #     "documents": mixed_content
+        # }
         group_data = {
-            "group_id": group.id,
-            "formatted": f"Formatted content for the group {group_id} ",
-            "documents": mixed_content
-        }
+    "group_id": group.id,
+    "project_id": project_id,
+    "formatted": f"Formatted content for the group {group_id}",
+    "documents": mixed_content,
+    "document_sources": [{"id": doc.id, "filename": doc.filename} for doc in saved_documents],
+    "video_sources": [{"id": vid.id, "youtube_video_id": vid.url} for vid in saved_videos],
+}
 
         collection_name = f"project_{project_id}_group_{group_id}"
 
         try:
-            vectorstore, all_chunks, collection_id, embedding = initialize_chroma_store(group_data, collection_name)
+            vectorstore, all_chunks, collection_id, embedding = initialize_chroma_store(group_data, collection_name,db)
             logger.info(f"✅ Chroma Collection ID: {collection_id}")
             logger.info(f"✅ Chroma Embedding is : {embedding}")
         except Exception as e:
@@ -223,8 +249,10 @@ async def update_group_content(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Unexpected error updating content for group {group_id} under project {project_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"You cannot update this group content {e}")
+        project_info = f" under project {project_id}" if 'project_id' in locals() else ""
+        logger.exception(f"Unexpected error updating content for group {group_id}{project_info}: {e}")
+        raise HTTPException(status_code=500, detail=f"You cannot update this group content: {e}")
+
     
 @group_router.delete("/delete-content")
 async def delete_group_content(
@@ -423,3 +451,79 @@ def get_user_group_with_content_api(
     except Exception as e:
         logger.exception(f"Error occurred while fetching content for group {group_id} by user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving the group content.")
+    
+@group_router.delete("/soft-delete-group-content/{group_id}")
+async def soft_delete_group_content(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    try:
+        # Validate the group belongs to the current user and is not already deleted
+        group = db.query(Group).filter(
+            Group.id == group_id,
+            Group.user_id == current_user.id,
+            Group.is_deleted == False
+        ).first()
+
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found.")
+
+        project_id = group.project_id
+        collection_name = f"project_{project_id}_group_{group_id}"
+
+        # ChromaDB soft-delete
+        vectorstore = Chroma(
+            persist_directory=persist_dir,
+            collection_name=collection_name,
+            embedding_function=ollama_embeddings
+        )
+
+        results = vectorstore.get(include=["documents", "metadatas"])
+        documents = results["documents"]
+        metadatas = results["metadatas"]
+        ids = results.get("ids", [f"doc_{i}" for i in range(len(documents))])
+
+        if documents:
+            updated_metadatas = []
+            for metadata in metadatas:
+                metadata["is_deleted"] = True
+                updated_metadatas.append(metadata)
+
+            vectorstore.delete(ids=ids)
+            vectorstore.add_texts(texts=documents, metadatas=updated_metadatas)
+            vectorstore.persist()
+
+            logger.info(f"✅ Soft-deleted all vector content for group {group_id} in Chroma.")
+        else:
+            logger.info(f"No Chroma documents found for group {group_id}.")
+
+        # Postgres soft-delete for Documents
+        db.query(Document).filter(
+            Document.group_id == group_id,
+            Document.is_deleted == False
+        ).update({Document.is_deleted: True})
+
+        # Postgres soft-delete for YouTube videos
+        db.query(YouTubeVideo).filter(
+            YouTubeVideo.group_id == group_id,
+            YouTubeVideo.is_deleted == False
+        ).update({YouTubeVideo.is_deleted: True})
+
+        # Optionally mark the group itself as deleted
+        group.is_deleted = True
+
+        db.commit()
+        logger.info(f"✅ Soft-deleted related documents and YouTube videos for group {group_id} in Postgres.")
+
+        return {
+            "status": "success",
+            "message": f"Soft-deleted all content for group {group_id} in Chroma and Postgres."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"🚨 Error during soft deletion: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to soft-delete group content.")

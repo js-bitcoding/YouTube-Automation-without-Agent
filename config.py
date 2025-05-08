@@ -18,4 +18,6 @@ UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
 
 OLLAMA_EMBEDDING_MODEL = OllamaEmbeddings(model="nomic-embed-text")
 
-OLLAMA_RESPONSE_MODEL = OllamaLLM(model="tinyllama:1.1b")
+
+OLLAMA_RESPONSE_MODEL = OllamaLLM(model="llama3.2:1b")
+# OLLAMA_RESPONSE_MODEL = OllamaLLM(model="tinyllama:1.1b")
