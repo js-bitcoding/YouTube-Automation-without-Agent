@@ -337,58 +337,68 @@ def delete_group(db: Session, group_id: int, user_id: int):
 #         raise HTTPException(status_code=500, detail="Error retrieving groups.")
 
 
-def fetch_all_chroma_documents(project_id: int, group_id: int) -> list:
+def fetch_all_chroma_documents(project_id: int, group_id: int) -> dict:
     """
     Fetches all non-deleted document and transcript chunks for a group from ChromaDB.
-
-    Args:
-        project_id (int): ID of the project.
-        group_id (int): ID of the group.
-
-    Returns:
-        list: List of content strings (documents/transcripts) stored in ChromaDB.
+    Returns a dictionary with 'documents' and 'youtube_transcripts'.
     """
     collection_name = f"project_{project_id}_group_{group_id}"
 
     try:
         collection = chroma_client.get_collection(name=collection_name)
         if collection is None:
-            logger.warning(f"Collection '{collection_name}' does not exist.")
-            return []
+            logger.warning(f"Collection '{collection_name}' does not exist. Please ensure the collection is created properly.")
+            return {"documents": [], "youtube_transcripts": []}
 
-        # Fetch both documents and metadata
         items = collection.get(include=["documents", "metadatas"])
 
         if not isinstance(items, dict) or "documents" not in items or "metadatas" not in items:
             logger.warning(f"Unexpected structure in ChromaDB collection '{collection_name}': {items}")
-            return []
+            return {"documents": [], "youtube_transcripts": []}
 
         documents = items["documents"]
         metadatas = items["metadatas"]
 
-        # Combine documents and metadata, filter out deleted ones
-        filtered_docs = [
-            doc for doc, meta in zip(documents, metadatas)
-            if not meta.get("is_deleted", False)
-        ]
+        # Debug log for documents and metadata
+        logger.debug(f"Found {len(documents)} documents and {len(metadatas)} metadata entries in collection '{collection_name}'.")
 
-        return filtered_docs
+        # Separate documents and youtube_transcripts based on metadata type
+        documents_data = []
+        youtube_transcripts_data = []
+
+        for doc, meta in zip(documents, metadatas):
+            if not meta.get("is_deleted", False):
+                if meta.get("type") == "document":
+                    documents_data.append({
+                        "content": doc,
+                        "type": "document",
+                        "document_id": meta.get("document_id")
+                    })
+                elif meta.get("type") == "youtube_transcript":
+                    youtube_transcripts_data.append({
+                        "content": doc,
+                        "type": "youtube_transcript",
+                        "youtube_id": meta.get("youtube_id")
+                    })
+
+        # Debugging the collected youtube transcripts
+        logger.debug(f"Found {len(youtube_transcripts_data)} youtube transcripts.")
+
+        return {"documents": documents_data, "youtube_transcripts": youtube_transcripts_data}
 
     except Exception as e:
         logger.warning(f"Could not fetch documents from ChromaDB collection '{collection_name}': {e}")
-        return []
+        return {"documents": [], "youtube_transcripts": []}
 
-#new
 def get_user_groups_with_content(user_id: int, db: Session):
     """
-    Retrieves all active groups for a user along with their content from ChromaDB and Postgres.
+    Retrieves all groups and their associated content for the current user.
 
-    Args:
-        user_id (int): User ID.
-        db (Session): Database session.
+    Args: db (Session): SQLAlchemy DB session. current_user (User): Authenticated user.
 
-    Returns:
-        dict: Groups with content from ChromaDB and Postgres.
+    Returns: dict: A list of groups with associated content.
+
+    Raises: HTTPException: If no groups are found for the current user.
     """
     try:
         # Fetch groups from Postgres for the user
@@ -402,59 +412,105 @@ def get_user_groups_with_content(user_id: int, db: Session):
 
         group_list = []
         for group in groups:
-            # Fetch shared ChromaDB content for the group
-            chroma_docs = fetch_all_chroma_documents(group.project_id, group.id)
+            # Fetch content from ChromaDB
+            chroma_docs_response = fetch_all_chroma_documents(group.project_id, group.id)
+            logger.debug(f"ChromaDB response for group {group.id}: {chroma_docs_response}")
 
-            # Prepare base structure for the group
+            chroma_docs = chroma_docs_response.get("documents", [])
+            youtube_transcripts = chroma_docs_response.get("youtube_transcripts", [])
+
             group_content = {
                 "group_id": group.id,
                 "group_name": group.name,
                 "project_id": group.project_id,
                 "documents": [],
+                "youtube_links": []
             }
 
-            # Fetch and append documents from Postgres
+            # Fetch documents from Postgres
             documents = db.query(Document).filter(
                 Document.group_id == group.id,
                 Document.is_deleted == False
             ).all()
 
             for doc in documents:
-                group_content["documents"].append({
+                # Filter only chunks that match this document's ID
+                matching_chunks = [
+                    item for item in chroma_docs
+                    if isinstance(item, dict)
+                    and item.get("type") == "document"
+                    and item.get("document_id") == doc.id
+                ]
+
+                document_content = {
                     "filename": doc.filename,
                     "tone": doc.tone or "Unknown",
                     "style": doc.style or "Unknown",
-                    "content": chroma_docs  # Add ChromaDB content
-                })
+                    "content": ""
+                }
 
-            # Fetch and append YouTube videos from Postgres
+                seen_content = set()  # To track unique content for each document
+                aggregated_content = []  # To accumulate content
+
+                for chunk in matching_chunks:
+                    chunk_content = chunk["content"]
+                    # Only add the chunk content if it hasn't been seen already
+                    if chunk_content not in seen_content:
+                        aggregated_content.append(chunk_content)
+                        seen_content.add(chunk_content)
+
+                # Concatenate the aggregated content into one string
+                document_content["content"] = "\n".join(aggregated_content)
+
+                group_content["documents"].append(document_content)
+
+            # Fetch YouTube links from Postgres
             youtube_links = db.query(YouTubeVideo).filter(
                 YouTubeVideo.group_id == group.id,
                 YouTubeVideo.is_deleted == False
             ).all()
 
-            if youtube_links:
-                group_content["youtube_links"] = []
-                for youtube in youtube_links:
-                    # Fetching the transcript properly from ChromaDB
-                    video_transcript = fetch_all_chroma_documents(group.project_id, group.id)
-                    
-                    group_content["youtube_links"].append({
-                        "url": youtube.url,
-                        "tone": youtube.tone or "Unknown",
-                        "style": youtube.style or "Unknown",
-                        "transcript": video_transcript  # Now this will contain the actual transcript content
-                    })
+            for youtube in youtube_links:
+                # Filter YouTube transcripts by matching video ID in metadata
+                matching_transcripts = [
+                    item for item in youtube_transcripts
+                    if isinstance(item, dict)
+                    and item.get("type") == "youtube_transcript"
+                    and item.get("youtube_id") == youtube.id  # Filter by the YouTube ID
+                ]
+
+                youtube_content = {
+                    "url": youtube.url,
+                    "tone": youtube.tone or "Unknown",
+                    "style": youtube.style or "Unknown",
+                    "transcript": "No transcript available"
+                }
+
+                seen_transcripts = set()  # To track unique transcripts for each YouTube video
+                aggregated_transcripts = []  # To accumulate transcripts
+
+                for transcript in matching_transcripts:
+                    transcript_content = transcript.get("content")
+                    # Only add the transcript content if it hasn't been seen already
+                    if transcript_content not in seen_transcripts:
+                        aggregated_transcripts.append(transcript_content)
+                        seen_transcripts.add(transcript_content)
+
+                # Concatenate the aggregated transcripts into one string
+                if aggregated_transcripts:
+                    youtube_content["transcript"] = "\n".join(aggregated_transcripts)
+                else:
+                    youtube_content["transcript"] = "No transcript available"
+
+                group_content["youtube_links"].append(youtube_content)
 
             group_list.append(group_content)
 
         return group_list
-    
-    except HTTPException:
-        raise
+
     except Exception as e:
-        logger.error(f"Error retrieving groups for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving groups.")
+        logger.exception(f"Error occurred while fetching groups for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")
 
 def get_user_group_with_content_by_id(group_id: int, user_id: int, db: Session):
     """

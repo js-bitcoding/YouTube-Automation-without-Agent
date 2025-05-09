@@ -1,5 +1,5 @@
 import datetime
-from typing import List
+from typing import List,Optional
 from sqlalchemy.orm import Session
 from fastapi.responses import JSONResponse
 from langchain_community.vectorstores import Chroma
@@ -139,6 +139,102 @@ def update_group_api(
         logger.exception(f"Unexpected error while updating group {group_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Unexpected error while updating group {group_id}: {e}")
 
+@group_router.post("/create-content")
+async def create_group_content(
+    project_id: int,
+    files: List[UploadFile] = File(None),
+    youtube_links: List[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """
+    Create a new group, upload documents and YouTube links, and store them in vector DB.
+
+    Args:
+        project_id (int): ID of the project.
+        files (List[UploadFile]): Uploaded files.
+        youtube_links (List[str]): Provided YouTube links.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Contains the list of documents and videos added to the new group.
+    """
+
+    try:
+        # Create new group
+        new_group = Group(
+            name=f"Group for {current_user.username}",
+            project_id=project_id,
+            user_id=current_user.id
+        )
+        db.add(new_group)
+        db.commit()
+        db.refresh(new_group)
+
+        group_id = new_group.id
+
+        # Process documents and YouTube content
+        results = await process_group_content(
+            group_id=group_id,
+            files=files or [],
+            youtube_links=youtube_links,
+            db=db,
+            current_user=current_user
+        )
+
+        saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
+        saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
+
+        document_texts = results.get("document_texts", [])
+        youtube_transcripts = results.get("youtube_transcripts", [])
+
+        if not document_texts and not youtube_transcripts:
+            logger.warning("No content found to embed into ChromaDB.")
+            raise HTTPException(status_code=400, detail="❌ No content available for ChromaDB storage.")
+
+        collection_name = f"project_{project_id}_group_{group_id}"
+
+        # Process documents separately
+        if document_texts:
+            doc_group_data = {
+                "group_id": group_id,
+                "project_id": project_id,
+                "formatted": f"Formatted document content for group {group_id}",
+                "documents": document_texts,
+                "document_sources": [{"id": doc.id, "filename": doc.filename} for doc in saved_documents],
+                "video_sources": [],
+            }
+            try:
+                initialize_chroma_store(doc_group_data, collection_name, db, source_type="document")
+            except Exception as e:
+                logger.error(f"🚨 Error initializing Chroma store for documents: {str(e)}")
+                raise HTTPException(status_code=500, detail="Error initializing Chroma store for documents")
+
+        # Process YouTube transcripts separately
+        if youtube_transcripts:
+            video_group_data = {
+                "group_id": group_id,
+                "project_id": project_id,
+                "formatted": f"Formatted video content for group {group_id}",
+                "documents": youtube_transcripts,
+                "document_sources": [],
+                "video_sources": [{"id": vid.id, "youtube_video_id": vid.url} for vid in saved_videos],
+            }
+            try:
+                initialize_chroma_store(video_group_data, collection_name, db, source_type="youtube_transcript")
+            except Exception as e:
+                logger.error(f"🚨 Error initializing Chroma store for videos: {str(e)}")
+                raise HTTPException(status_code=500, detail="Error initializing Chroma store for videos")
+
+        results["group_id"] = group_id
+        results["project_id"] = project_id
+        return JSONResponse(content=results)
+
+    except Exception as e:
+        logger.exception(f"Unexpected error creating group content for project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error creating group content: {e}")
+
 
 @group_router.put("/update-content")
 async def update_group_content(
@@ -196,54 +292,50 @@ async def update_group_content(
             db=db,
             current_user=current_user
         )
+
         saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
         saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
 
-        if not results.get("documents") and not results.get("videos"):
-            logger.warning("Process returned no documents or videos")
-            raise HTTPException(status_code=400, detail="No valid documents or YouTube links processed.")
-
-        # saved_documents = db.query(Document).filter(Document.group_id == group_id).all()
-        # document_texts = [doc.content for doc in saved_documents if doc.content]
-
-        # saved_videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group_id).all()
-        # youtube_transcripts = [video.transcript for video in saved_videos if video.transcript]
         document_texts = results.get("document_texts", [])
         youtube_transcripts = results.get("youtube_transcripts", [])
-        mixed_content = document_texts + youtube_transcripts
 
-        if not all(isinstance(item, str) for item in mixed_content):
-            logger.error("One or more items in mixed_content are not valid strings.")
-            raise HTTPException(status_code=400, detail="Content contains invalid data.")
-
-        if not mixed_content:
+        if not document_texts and not youtube_transcripts:
             logger.warning("No content found to embed into ChromaDB.")
             raise HTTPException(status_code=400, detail="❌ No content available for ChromaDB storage.")
 
-        # group_data = {
-        #     "group_id": group.id,
-        #     "formatted": f"Formatted content for the group {group_id} ",
-        #     "documents": mixed_content
-        # }
-        group_data = {
-    "group_id": group.id,
-    "project_id": project_id,
-    "formatted": f"Formatted content for the group {group_id}",
-    "documents": mixed_content,
-    "document_sources": [{"id": doc.id, "filename": doc.filename} for doc in saved_documents],
-    "video_sources": [{"id": vid.id, "youtube_video_id": vid.url} for vid in saved_videos],
-}
+        # Process documents separately
+        for doc, doc_text in zip(saved_documents, document_texts):
+            doc_group_data = {
+        "group_id": group_id,
+        "project_id": project_id,
+        "formatted": f"Formatted content for document {doc.filename}",
+        "documents": [doc_text],
+        "document_id": doc.id  # ✅ Pass document ID
+    }
+            try:
+                initialize_chroma_store(doc_group_data, f"project_{project_id}_group_{group_id}", db, source_type="document")
+            except Exception as e:
+                logger.error(f"🚨 Error initializing Chroma store for document {doc.filename}: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error initializing Chroma store for document {doc.filename}")
 
-        collection_name = f"project_{project_id}_group_{group_id}"
 
-        try:
-            vectorstore, all_chunks, collection_id, embedding = initialize_chroma_store(group_data, collection_name,db)
-            logger.info(f"✅ Chroma Collection ID: {collection_id}")
-            logger.info(f"✅ Chroma Embedding is : {embedding}")
-        except Exception as e:
-            logger.error(f"🚨 Error initializing Chroma store: {str(e)}")
-            raise HTTPException(status_code=500, detail="Error initializing Chroma store")
+        # Process YouTube transcripts separately
+        for vid, transcript in zip(saved_videos, youtube_transcripts):
+            video_group_data = {
+        "group_id": group_id,
+        "project_id": project_id,
+        "formatted": f"Formatted content for YouTube video {vid.url}",
+        "documents": [transcript],
+        "youtube_id": vid.id  # ✅ Pass YouTube video ID
+    }
+            try:
+                initialize_chroma_store(video_group_data, f"project_{project_id}_group_{group_id}", db, source_type="youtube_transcript")
+            except Exception as e:
+                logger.error(f"🚨 Error initializing Chroma store for YouTube {vid.url}: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error initializing Chroma store for YouTube {vid.url}")
 
+        results["group_id"] = group_id
+        results["project_id"] = project_id
         return JSONResponse(content=results)
 
     except HTTPException:

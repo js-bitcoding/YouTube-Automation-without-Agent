@@ -75,7 +75,7 @@ def split_text_with_recursive_splitter(text: str, chunk_size: int = 1000, chunk_
     # Truncate to a maximum number of chunks
     return all_chunks[:max_chunks]
 
-def initialize_chroma_store(group_data: dict, collection_name: str,db: Session):
+def initialize_chroma_store(group_data: dict, collection_name: str,db: Session,source_type: str):
     try:
         
         if "group_id" not in group_data:
@@ -84,47 +84,17 @@ def initialize_chroma_store(group_data: dict, collection_name: str,db: Session):
         
         combined_documents = [group_data["formatted"]] + group_data["documents"]
         combined_text = "\n\n".join(combined_documents)
+        extra_metadata = {}
+        if source_type == "document":
+            extra_metadata["document_id"] = group_data.get("document_id")
+        elif source_type == "youtube_transcript":
+            extra_metadata["youtube_id"] = group_data.get("youtube_id")
 
         # Split into max 10 chunks using equal size method
         raw_chunks = split_text_with_recursive_splitter(combined_text, max_chunks=10)
         all_chunks = [
-    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"],"chunk_index": idx, "is_deleted": False })
+    LangchainDocument(page_content=chunk, metadata={"group_id": group_data["group_id"],"chunk_index": idx, "is_deleted": False ,"type": source_type,**extra_metadata})
     for idx, chunk in enumerate(raw_chunks)] 
-#         all_chunks = []
-
-# # Process documents
-#         for doc_info in group_data["document_sources"]:
-#             content = ...  # get the corresponding content for this document
-#             chunks = split_text_with_recursive_splitter(content, max_chunks=10)
-#             for idx, chunk in enumerate(chunks):
-#                 metadata = {
-#             "group_id": group_data["group_id"],
-#             "project_id": group_data["project_id"],
-#             "chunk_index": idx,
-#             "source_type": "document",
-#             "document_id": doc_info["id"],
-#             "is_deleted": False,
-#             "timestamp": datetime.datetime.now().isoformat()
-#         }
-#             all_chunks.append(LangchainDocument(page_content=chunk, metadata=metadata))
-
-#         # Process YouTube videos
-#         for vid_info in group_data["video_sources"]:
-#             transcript = ...  # get corresponding transcript
-#             chunks = split_text_with_recursive_splitter(transcript, max_chunks=5)
-#             for idx, chunk in enumerate(chunks):
-#                 metadata = {
-#             "group_id": group_data["group_id"],
-#             "project_id": group_data["project_id"],
-#             "chunk_index": idx,
-#             "source_type": "video",
-#             "youtube_video_id": vid_info["youtube_video_id"],
-#             "video_id": vid_info["id"],
-#             "is_deleted": False,
-#             "timestamp": datetime.datetime.now().isoformat()
-#         }
-#             all_chunks.append(LangchainDocument(page_content=chunk, metadata=metadata))
-    
 
         for i, chunk in enumerate(all_chunks):
             logger.info(f" Chunk {i+1}/{len(all_chunks)}: {len(chunk.page_content)} characters")
