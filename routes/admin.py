@@ -35,7 +35,6 @@ def get_user_count(db: Session = Depends(get_db), _: User = Depends(admin_only))
         logger.exception(f"Database error while fetching users. {e}")
         raise HTTPException(status_code=500, detail=f"⚠️ Failed to fetch users {e}")
 
-
 @admin_router.put("/{user_id}/")
 def update_user(
     user_id: int,

@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, Query
 from sqlalchemy.orm import Session
-from database.models import User, Project
-from service.project_service import create_project, update_project, delete_project
-from database.db_connection import get_db
-from routes.auth import get_current_user
 from utils.logging_utils import logger
+from routes.auth import get_current_user
+from database.models import User, Project
+from database.db_connection import get_db
+from fastapi import APIRouter, Depends, HTTPException, Form, Query
+from service.project_service import create_project, update_project, delete_project
 
 project_router = APIRouter(prefix="/projects")
 

@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
-from database.models import Video, Channel, User, UserSavedVideo
 from functionality.current_user import get_current_user
 from fastapi import APIRouter, Depends, Query, HTTPException
+from database.models import Video, Channel, User, UserSavedVideo
 from service.youtube_service import fetch_youtube_videos, fetch_video_by_id, fetch_homepage_videos, fetch_related_videos
 from service.engagement_service import calculate_engagement_rate, calculate_view_to_subscriber_ratio, calculate_view_velocity
 
@@ -84,7 +84,7 @@ def save_video(
     try:
         print(f"Saving video {video_id} for user {user.id}")
 
-        # Fetch video details
+       
         video_details = fetch_video_by_id(video_id)
         if "error" in video_details:
             raise HTTPException(status_code=404, detail="Video not found")
@@ -133,20 +133,18 @@ def save_video(
         else:
             video = existing_video
 
-        # Check if the video has already been saved by the user
+    
         existing_entry = (
             db.query(UserSavedVideo)
             .filter(UserSavedVideo.user_id == user.id, UserSavedVideo.video_id == video_id)
             .first()
         )
 
-        # If the video is soft deleted, remove the entry
         if existing_entry and existing_entry.is_deleted is not None:
             db.delete(existing_entry)
             db.commit()
             print(f"Soft-deleted entry for video {video_id} removed")
 
-        # Check again if the video is saved by the user after soft delete (or if it was never saved)
         existing_entry = (
             db.query(UserSavedVideo)
             .filter(UserSavedVideo.user_id == user.id, UserSavedVideo.video_id == video_id)
@@ -166,9 +164,8 @@ def save_video(
         return {"message": "Video saved successfully!", "video_id": video_id}
 
     except HTTPException as e:
-        # Handle HTTPException (e.g., 404 not found, 400 bad request)
+
         print(f"HTTP Exception occurred: {e.detail}")
-        raise e  # Re-raise the HTTPException
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")

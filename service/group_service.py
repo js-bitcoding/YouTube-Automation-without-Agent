@@ -1,17 +1,17 @@
 import datetime, os
+from config import UPLOAD_FOLDER
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from chromadb import PersistentClient
+from utils.logging_utils import logger
 from fastapi import UploadFile, HTTPException
-from config import UPLOAD_FOLDER
 from database.models import Group,User,Document,YouTubeVideo
 from service.script_service import (
     fetch_transcript,
     extract_text_from_file,
     analyze_transcript_style,
 )
-from utils.logging_utils import logger
-from chromadb import Client
-from chromadb import PersistentClient
+
 
 
 chroma_client = PersistentClient(path="./chroma_db") 
@@ -25,27 +25,8 @@ async def process_group_content(
 ) -> dict:
     group = None
     project_id = None
-    """
-    Processes uploaded files and YouTube links, extracting relevant content and storing it in the database.
 
-    Args:
-        project_id (int): The ID of the project the group belongs to.
-        group_id (Optional[int]): The ID of the group. If 0, a new group is created.
-        files (List[UploadFile]): A list of uploaded files (PDF, DOCX, or TXT).
-        youtube_links (List[str]): A list of YouTube video URLs.
-        db (Session): The database session to interact with the database.
-        current_user (User): The current user who is uploading the files and videos.
-
-    Returns:
-        dict: A dictionary with the results of processing the documents and videos. It contains two lists:
-            - "documents": A list of dictionaries with filenames and status messages for each processed document.
-            - "videos": A list of dictionaries with video URLs, extracted transcript excerpts, and status messages for each processed video.
-            - "group": If a new group was created, a message with the group ID.
-        
-    Raises:
-        HTTPException: If the group is not found for the given project.
-    """
-    results = {"documents": [],"youtube_transcripts": [], "document_texts": [], "videos": []}
+    results = {"documents": [], "youtube_transcripts": [], "document_texts": [], "videos": []}
 
     if group_id == 0:
         try:
@@ -85,9 +66,9 @@ async def process_group_content(
 
             if not file.filename.endswith((".pdf", ".docx", ".txt")):
                 results["documents"].append({
-                "filename": file.filename,
-                "error": "Unsupported file type. Only PDF, DOCX, and TXT are allowed."
-            })
+                    "filename": file.filename,
+                    "error": "Unsupported file type. Only PDF, DOCX, and TXT are allowed."
+                })
                 continue
 
             try:
@@ -95,9 +76,7 @@ async def process_group_content(
                 filename = f"{timestamp}_{file.filename}"
                 file_path = os.path.join(UPLOAD_FOLDER, filename)
 
-                print("file_path :: ", file_path)
                 with open(file_path, "wb") as f:
-                    print("file type : ", type(file))   
                     content = await file.read()
                     f.write(content)
 
@@ -105,26 +84,26 @@ async def process_group_content(
 
                 await file.seek(0)
                 extracted_text = await extract_text_from_file(file)
-            
                 logger.info(f"Text extracted from file {file.filename}: {len(extracted_text)} characters")
 
                 cleaned_text = " ".join(extracted_text.split())
 
                 try:
                     analysis = analyze_transcript_style(cleaned_text)
-                    if not isinstance(analysis, dict):
-                        raise ValueError("Transcript analysis returned invalid data.")
-                    tone = analysis.get("tone", "Unknown")
-                    style = analysis.get("style", "Unknown")
+                    tone = analysis.get("tone")
+                    style = analysis.get("style")
+
+                    if not tone or not tone.strip():
+                        tone = "Unknown"
+                    if not style or not style.strip():
+                        style = "Unknown"
+
                 except Exception as e:
                     logger.error(f"Error analyzing transcript style: {e}")
-                    tone = "Unknown"
-                    style = "Unknown"
-
+                    tone, style = "Unknown", "Unknown"
 
                 doc_entry = Document(
                     filename=file.filename,
-                    # content=file.filename,
                     tone=tone,
                     style=style,
                     group_id=group_id
@@ -134,17 +113,16 @@ async def process_group_content(
                 db.refresh(doc_entry)
 
                 results["document_texts"].append(cleaned_text)
-                
                 results["documents"].append({
-                "filename": file.filename,
-                "message": "Uploaded and extracted successfully"
+                    "filename": file.filename,
+                    "message": "Uploaded and extracted successfully"
                 })
             except Exception as e:
                 logger.error(f"Error processing document {file.filename}: {e}")
                 results["documents"].append({
-                "filename": file.filename,
-                "error": f"Failed to process document: {str(e)}"
-            })
+                    "filename": file.filename,
+                    "error": f"Failed to process document: {str(e)}"
+                })
 
     if youtube_links:
         for link in youtube_links:
@@ -152,45 +130,232 @@ async def process_group_content(
                 transcript, err = fetch_transcript(link)
                 if not transcript:
                     results["videos"].append({
-                        "video_url": link,
-                        "error": f"Transcript extraction failed: {err}"
-                    })
+                    "video_url": link,
+                    "error": f"Transcript extraction failed: {err}"
+                })
                     continue
-                
+            
                 try:
                     analysis = analyze_transcript_style(transcript)
-                    tone = analysis.get("tone", "Unknown")
-                    style = analysis.get("style", "Unknown")
+                    tone = analysis.get("tone")
+                    style = analysis.get("style")
+
+                    if not tone or not tone.strip():
+                        tone = "Unknown"
+                    if not style or not style.strip():
+                        style = "Unknown"
+
                 except Exception as e:
                     logger.error(f"Error analyzing transcript style: {e}")
-                    tone = "Unknown"
-                    style = "Unknown"
+                    tone, style = "Unknown", "Unknown"
+
 
                 youtube_entry = YouTubeVideo(
+                url=link,
+                group_id=group_id,
+                tone=tone,
+                style=style,
+                is_deleted=False
+                )
+                logger.debug(f"Saving YouTube video with Tone: {tone}, Style: {style}")  # Log the values being saved
+                db.add(youtube_entry)
+                db.commit()
+                db.refresh(youtube_entry)
+                logger.info(f"Saved video entry: {youtube_entry.id} | Tone: {youtube_entry.tone} | Style: {youtube_entry.style}")
+
+                results["youtube_transcripts"].append(transcript)
+                results["videos"].append({
+                "video_url": link,
+                "message": "Transcript extracted and link saved",
+                "transcript_excerpt": transcript,
+                "style": style,
+                "tone": tone
+            })
+            except Exception as e:
+                logger.error(f"Error processing YouTube video {link}: {e}")
+                results["videos"].append({
+                "video_url": link,
+                "error": str(e)
+            })
+
+    return results
+
+async def update_groups_content(
+    group_id: Optional[int],
+    files: List[UploadFile],
+    youtube_links: List[str],
+    db: Session,
+    current_user: User,
+    document_ids: Optional[List[int]] = None,
+    youtube_ids: Optional[List[int]] = None
+) -> dict:
+    results = {
+        "documents": [],
+        "youtube_transcripts": [],
+        "document_texts": [],
+        "videos": [],
+        "doc_objects": [],  
+        "yt_objects": []    
+    }
+
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group or group.user_id != current_user.id:
+        logger.error(f"Group with ID {group_id} not found for user {current_user.id}.")
+        raise HTTPException(status_code=404, detail="Group not found.")
+
+    project_id = group.project_id
+
+    for idx, file in enumerate(files or []):
+        if not file or not file.filename:
+            continue
+
+        if not file.filename.endswith((".pdf", ".docx", ".txt")):
+            results["documents"].append({
+                "filename": file.filename,
+                "error": "Unsupported file type. Only PDF, DOCX, and TXT are allowed."
+            })
+            continue
+
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            filename = f"{timestamp}_{file.filename}"
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+            with open(file_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+
+            await file.seek(0)
+            extracted_text = await extract_text_from_file(file)
+            cleaned_text = " ".join(extracted_text.split())
+
+            try:
+                analysis = analyze_transcript_style(cleaned_text)
+                tone = analysis.get("tone")
+                style = analysis.get("style")
+
+                if not tone or not tone.strip():
+                    tone = "Unknown"
+                if not style or not style.strip():
+                    style = "Unknown"
+
+            except Exception as e:
+                    logger.error(f"Error analyzing transcript style: {e}")
+                    tone, style = "Unknown", "Unknown"
+
+            document_id = document_ids[idx] if document_ids and idx < len(document_ids) else None
+
+            if document_id:
+                doc_entry = db.query(Document).filter(
+                    Document.id == document_id, Document.group_id == group_id
+                ).first()
+                if not doc_entry:
+                    raise HTTPException(status_code=404, detail=f"Document ID {document_id} not found.")
+                doc_entry.filename = file.filename
+                doc_entry.tone = tone
+                doc_entry.style = style
+            else:
+                doc_entry = Document(
+                    filename=file.filename,
+                    tone=tone,
+                    style=style,
+                    group_id=group_id
+                )
+                db.add(doc_entry)
+
+            db.commit()
+            db.refresh(doc_entry)
+
+            results["doc_objects"].append({
+                "id": doc_entry.id,
+                "filename": doc_entry.filename,
+                "tone": doc_entry.tone,
+                "style": doc_entry.style
+            })
+
+            results["document_texts"].append(cleaned_text)
+            results["documents"].append({
+                "filename": file.filename,
+                "message": "Uploaded and extracted successfully"
+            })
+
+        except Exception as e:
+            logger.error(f"Error processing document {file.filename}: {e}")
+            results["documents"].append({
+                "filename": file.filename,
+                "error": f"Failed to process document: {str(e)}"
+            })
+
+    for idx, link in enumerate(youtube_links or []):
+        try:
+            transcript, err = fetch_transcript(link)
+            if not transcript:
+                results["videos"].append({
+                    "video_url": link,
+                    "error": f"Transcript extraction failed: {err}"
+                })
+                continue
+
+            try:
+                analysis = analyze_transcript_style(transcript)
+                tone = analysis.get("tone")
+                style = analysis.get("style")
+
+                if not tone or not tone.strip():
+                    tone = "Unknown"
+                if not style or not style.strip():
+                    style = "Unknown"
+
+            except Exception as e:
+                    logger.error(f"Error analyzing transcript style: {e}")
+                    tone, style = "Unknown", "Unknown"
+
+            youtube_id = youtube_ids[idx] if youtube_ids and idx < len(youtube_ids) else None
+
+            if youtube_id:
+                yt_entry = db.query(YouTubeVideo).filter(
+                    YouTubeVideo.id == youtube_id, YouTubeVideo.group_id == group_id
+                ).first()
+                if not yt_entry:
+                    raise HTTPException(status_code=404, detail=f"YouTube ID {youtube_id} not found.")
+                yt_entry.url = link
+                yt_entry.tone = tone
+                yt_entry.style = style
+            else:
+                yt_entry = YouTubeVideo(
                     url=link,
                     group_id=group_id,
-                    # transcript=link,
                     tone=tone,
                     style=style,
                     is_deleted=False
                 )
-                db.add(youtube_entry)
-                db.commit()
-                db.refresh(youtube_entry)
-                results["youtube_transcripts"].append(transcript)
-                results["videos"].append({
-                    "video_url": link,
-                    "message": "Transcript extracted and link saved",
-                    "transcript_excerpt": transcript,
-                    "style": style,
-                    "tone": tone
-                })
-            except Exception as e:
-                logger.error(f"Error processing YouTube video {link}: {e}")
-                results["videos"].append({
-                    "video_url": link,
-                    "error": str(e)
-                })
+                db.add(yt_entry)
+
+            db.commit()
+            db.refresh(yt_entry)
+
+            results["yt_objects"].append({
+                "id": yt_entry.id,
+                "url": yt_entry.url,
+                "tone": yt_entry.tone,
+                "style": yt_entry.style
+            })
+
+            results["youtube_transcripts"].append(transcript)
+            results["videos"].append({
+                "video_url": link,
+                "message": "Transcript extracted and link saved",
+                "transcript_excerpt": transcript,
+                "style": style,
+                "tone": tone
+            })
+
+        except Exception as e:
+            logger.error(f"Error processing YouTube video {link}: {e}")
+            results["videos"].append({
+                "video_url": link,
+                "error": str(e)
+            })
 
     return results
 
@@ -282,61 +447,6 @@ def delete_group(db: Session, group_id: int, user_id: int):
         db.rollback()
         return None
 
-#old
-# def get_user_groups_with_content(user_id: int, db: Session):
-#     """
-#     Retrieves all active groups for a user along with associated documents and videos.
-
-#     Args:
-#         user_id (int): ID of the user for whom to fetch groups.
-#         db (Session): Database session.
-
-#     Returns:
-#         list: A list of groups, each with their associated documents and videos.
-
-#     Raises:
-#         HTTPException: If no groups are found for the user.
-#     """
-#     try:
-#         groups = db.query(Group).filter(
-#             Group.user_id == user_id,
-#             Group.is_deleted == False
-#         ).all()
-
-#         if not groups:
-#             raise HTTPException(status_code=404, detail="No groups found for this user.")
-
-#         group_list = []
-#         for group in groups:
-#             documents = db.query(Document).filter(Document.group_id == group.id).all()
-#             videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group.id).all()
-
-#             group_list.append({
-#                 "group_id": group.id,
-#                 "group_name": group.name,
-#                 "project_id": group.project_id,
-#                 "documents": [
-#                     {   "document id": doc.id,
-#                         "filename": doc.filename, "content_snippet": doc.content} for doc in documents
-#                 ],
-#                 "videos": [
-#                     {
-#                         "videos id": vid.id,
-#                         "video_url": vid.url,
-#                         "transcript_excerpt": vid.transcript,
-#                         "tone": vid.tone,
-#                         "style": vid.style
-#                     }
-#                     for vid in videos
-#                 ]
-#             })
-
-#         return group_list
-#     except Exception as e:
-#         logger.error(f"Error retrieving groups for user {user_id}: {e}")
-#         raise HTTPException(status_code=500, detail="Error retrieving groups.")
-
-
 def fetch_all_chroma_documents(project_id: int, group_id: int) -> dict:
     """
     Fetches all non-deleted document and transcript chunks for a group from ChromaDB.
@@ -346,6 +456,7 @@ def fetch_all_chroma_documents(project_id: int, group_id: int) -> dict:
 
     try:
         collection = chroma_client.get_collection(name=collection_name)
+        
         if collection is None:
             logger.warning(f"Collection '{collection_name}' does not exist. Please ensure the collection is created properly.")
             return {"documents": [], "youtube_transcripts": []}
@@ -359,29 +470,30 @@ def fetch_all_chroma_documents(project_id: int, group_id: int) -> dict:
         documents = items["documents"]
         metadatas = items["metadatas"]
 
-        # Debug log for documents and metadata
+       
         logger.debug(f"Found {len(documents)} documents and {len(metadatas)} metadata entries in collection '{collection_name}'.")
 
-        # Separate documents and youtube_transcripts based on metadata type
         documents_data = []
         youtube_transcripts_data = []
 
         for doc, meta in zip(documents, metadatas):
             if not meta.get("is_deleted", False):
-                if meta.get("type") == "document":
-                    documents_data.append({
-                        "content": doc,
-                        "type": "document",
-                        "document_id": meta.get("document_id")
-                    })
-                elif meta.get("type") == "youtube_transcript":
-                    youtube_transcripts_data.append({
-                        "content": doc,
-                        "type": "youtube_transcript",
-                        "youtube_id": meta.get("youtube_id")
-                    })
+            
+                content = doc.strip() if isinstance(doc, str) else None
+                if content:
+                    if meta.get("type") == "document":
+                        documents_data.append({
+                            "content": content,
+                            "type": "document",
+                            "document_id": meta.get("document_id")
+                        })
+                    elif meta.get("type") == "youtube_transcript":
+                        youtube_transcripts_data.append({
+                            "content": content,
+                            "type": "youtube_transcript",
+                            "youtube_id": meta.get("youtube_id")
+                        })
 
-        # Debugging the collected youtube transcripts
         logger.debug(f"Found {len(youtube_transcripts_data)} youtube transcripts.")
 
         return {"documents": documents_data, "youtube_transcripts": youtube_transcripts_data}
@@ -401,7 +513,7 @@ def get_user_groups_with_content(user_id: int, db: Session):
     Raises: HTTPException: If no groups are found for the current user.
     """
     try:
-        # Fetch groups from Postgres for the user
+     
         groups = db.query(Group).filter(
             Group.user_id == user_id,
             Group.is_deleted == False
@@ -412,7 +524,7 @@ def get_user_groups_with_content(user_id: int, db: Session):
 
         group_list = []
         for group in groups:
-            # Fetch content from ChromaDB
+          
             chroma_docs_response = fetch_all_chroma_documents(group.project_id, group.id)
             logger.debug(f"ChromaDB response for group {group.id}: {chroma_docs_response}")
 
@@ -427,14 +539,14 @@ def get_user_groups_with_content(user_id: int, db: Session):
                 "youtube_links": []
             }
 
-            # Fetch documents from Postgres
+      
             documents = db.query(Document).filter(
                 Document.group_id == group.id,
                 Document.is_deleted == False
             ).all()
 
             for doc in documents:
-                # Filter only chunks that match this document's ID
+             
                 matching_chunks = [
                     item for item in chroma_docs
                     if isinstance(item, dict)
@@ -449,34 +561,33 @@ def get_user_groups_with_content(user_id: int, db: Session):
                     "content": ""
                 }
 
-                seen_content = set()  # To track unique content for each document
-                aggregated_content = []  # To accumulate content
+                seen_content = set()  
+                aggregated_content = []  
 
                 for chunk in matching_chunks:
                     chunk_content = chunk["content"]
-                    # Only add the chunk content if it hasn't been seen already
+                   
                     if chunk_content not in seen_content:
                         aggregated_content.append(chunk_content)
                         seen_content.add(chunk_content)
 
-                # Concatenate the aggregated content into one string
                 document_content["content"] = "\n".join(aggregated_content)
 
                 group_content["documents"].append(document_content)
 
-            # Fetch YouTube links from Postgres
+          
             youtube_links = db.query(YouTubeVideo).filter(
                 YouTubeVideo.group_id == group.id,
                 YouTubeVideo.is_deleted == False
             ).all()
 
             for youtube in youtube_links:
-                # Filter YouTube transcripts by matching video ID in metadata
+             
                 matching_transcripts = [
                     item for item in youtube_transcripts
                     if isinstance(item, dict)
                     and item.get("type") == "youtube_transcript"
-                    and item.get("youtube_id") == youtube.id  # Filter by the YouTube ID
+                    and item.get("youtube_id") == youtube.id  
                 ]
 
                 youtube_content = {
@@ -486,17 +597,17 @@ def get_user_groups_with_content(user_id: int, db: Session):
                     "transcript": "No transcript available"
                 }
 
-                seen_transcripts = set()  # To track unique transcripts for each YouTube video
-                aggregated_transcripts = []  # To accumulate transcripts
+                seen_transcripts = set() 
+                aggregated_transcripts = []  
 
                 for transcript in matching_transcripts:
                     transcript_content = transcript.get("content")
-                    # Only add the transcript content if it hasn't been seen already
+                   
                     if transcript_content not in seen_transcripts:
                         aggregated_transcripts.append(transcript_content)
                         seen_transcripts.add(transcript_content)
 
-                # Concatenate the aggregated transcripts into one string
+                
                 if aggregated_transcripts:
                     youtube_content["transcript"] = "\n".join(aggregated_transcripts)
                 else:
@@ -507,7 +618,8 @@ def get_user_groups_with_content(user_id: int, db: Session):
             group_list.append(group_content)
 
         return group_list
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error occurred while fetching groups for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while fetching groups and content.")

@@ -1,9 +1,7 @@
-from fastapi import APIRouter, HTTPException
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
 from utils.logging_utils import logger
-from pydantic import BaseModel
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException
+from langchain_ollama import OllamaEmbeddings
 from database.schemas import CollectionResponseModel
 
 router = APIRouter()

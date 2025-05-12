@@ -2,9 +2,9 @@ import os
 import pytz
 import jwt as pyjwt
 from dotenv import load_dotenv
+from utils.logging_utils import logger
 from datetime import datetime, timedelta
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
-from utils.logging_utils import logger
 
 load_dotenv()
 

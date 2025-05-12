@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends,HTTPException
+from utils.logging_utils import logger
 from database.db_connection import get_db
 from database.models import GeneratedTitle, User
+from fastapi import APIRouter, Depends,HTTPException
 from functionality.current_user import get_current_user  
 from service.title_generator_service import generate_ai_titles
-from utils.logging_utils import logger
 
 router = APIRouter()
 
@@ -158,7 +158,7 @@ def delete_title(
         title_entry = db.query(GeneratedTitle).filter(
             GeneratedTitle.id == title_id,
             GeneratedTitle.user_id == user.id,
-            GeneratedTitle.is_deleted == False  # Only consider active entries
+            GeneratedTitle.is_deleted == False  
         ).first()
 
         if not title_entry:

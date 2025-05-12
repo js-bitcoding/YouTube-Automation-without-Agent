@@ -1,12 +1,12 @@
 from datetime import datetime
-from fastapi import HTTPException, Depends, status
-from functionality.jwt_token import decodeJWT
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from database.models import User, timezone
-from database.db_connection import get_db
 from utils.logging_utils import logger
+from database.db_connection import get_db
 from sqlalchemy.exc import SQLAlchemyError
+from database.models import User, timezone
+from functionality.jwt_token import decodeJWT
+from fastapi import HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 jwt_bearer = HTTPBearer()
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(jwt_bearer), db: Session = Depends(get_db)):
@@ -64,6 +64,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(jwt_bea
 
     logger.info(f"User ID {user_id} successfully authenticated.")
     return user
+
 def admin_only(user: User = Depends(get_current_user)):
     """
     Ensures that the current user has admin privileges.

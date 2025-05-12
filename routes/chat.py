@@ -1,10 +1,10 @@
+from utils.logging_utils import logger
+from database.db_connection import get_db
 from sqlalchemy.orm import Session,joinedload
 from fastapi import APIRouter, Depends ,HTTPException
-from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
-from service.chat_ai_agent_service import generate_response_for_conversation
-from database.db_connection import get_db
 from functionality.current_user import get_current_user
-from utils.logging_utils import logger
+from service.chat_ai_agent_service import generate_response_for_conversation
+from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
 
 chat_router = APIRouter(prefix="/conversations")
 

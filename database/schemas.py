@@ -1,7 +1,7 @@
 import datetime
+from fastapi import Form,Body
 from typing import Optional, List, Union
 from pydantic import BaseModel, Field, EmailStr
-from fastapi import Form,Body
 
 class UserRegister(BaseModel):
     username: str 

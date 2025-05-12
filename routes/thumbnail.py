@@ -5,8 +5,8 @@ import torch
 import shutil
 from PIL import Image
 from typing import Optional, List
-from fastapi import Depends, UploadFile, File, Form, Query, HTTPException, APIRouter, Body
 from sqlalchemy.orm import Session
+from utils.logging_utils import logger
 from diffusers import StableDiffusionImg2ImgPipeline
 from database.db_connection import get_db
 from database.models import Thumbnail, User
@@ -17,7 +17,7 @@ from service.thumbnail_service import (
     validate_thumbnail,
     fetch_thumbnails_preview, 
 )
-from utils.logging_utils import logger
+from fastapi import Depends, UploadFile, File, Form, Query, HTTPException, APIRouter, Body
 
 thumbnail_router = APIRouter()
 

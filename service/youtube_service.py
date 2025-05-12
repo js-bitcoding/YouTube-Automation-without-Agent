@@ -1,19 +1,19 @@
 import os
 import re
 import requests
-from typing import List, Dict, Optional,Union
-from datetime import datetime, timedelta
+from config import YOUTUBE_API_KEY
 from sqlalchemy import create_engine
+from utils.logging_utils import logger
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
+from database.models import Video, timezone
+from typing import List, Dict, Optional,Union
 from service.engagement_service import (
     calculate_view_to_subscriber_ratio,
     calculate_view_velocity,
     calculate_engagement_rate,
 )
-from config import YOUTUBE_API_KEY
-from database.models import Video, timezone
-from utils.logging_utils import logger
 
 YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 BASE_URL = "https://www.googleapis.com/youtube/v3"
@@ -30,10 +30,10 @@ def fetch_related_videos(video_id: str, max_results: int = 5) -> List[Dict]:
     if not YOUTUBE_API_KEY:
         raise ValueError("YouTube API Key is missing.")
 
-    # Step 1: Fetch the title of the video
+
     title = get_video_title(video_id)
     
-    # Step 2: Use the video title to search for related videos
+  
     params = {
         "part": "snippet",
         "q": title,
@@ -44,8 +44,8 @@ def fetch_related_videos(video_id: str, max_results: int = 5) -> List[Dict]:
 
     try:
         response = requests.get(f"{BASE_URL}/search", params=params)
-        print("Request params:", params)  # Debug
-        print("Request URL:", response.url)  # Debug
+        print("Request params:", params)  
+        print("Request URL:", response.url)  
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         print("YouTube API error:", e.response.text)
@@ -71,10 +71,10 @@ def fetch_homepage_videos():
     """
     params = {
         "part": "snippet,statistics",
-        "chart": "mostPopular",  # Fetch most popular videos
-        "regionCode": "IN",      # Set region (you can change it to any country code)
-        "maxResults": 10,        # Number of videos to return
-        "key": YOUTUBE_API_KEY           # API key for authentication
+        "chart": "mostPopular",  
+        "regionCode": "IN",   
+        "maxResults": 10,       
+        "key": YOUTUBE_API_KEY           
     }
 
     response = requests.get(YOUTUBE_API_URL, params=params)
@@ -88,7 +88,7 @@ def fetch_homepage_videos():
             snippet = video["snippet"]
             statistics = video["statistics"]
 
-            # Get channel information
+           
             channel_id = snippet["channelId"]
             channel_url = f"{CHANNEL_API_URL}?part=snippet,statistics&id={channel_id}&key={YOUTUBE_API_KEY}"
             channel_response = requests.get(channel_url)
@@ -138,7 +138,7 @@ def get_video_title(video_id: str) -> str:
     }
     
     response = requests.get(f"{BASE_URL}/videos", params=params)
-    response.raise_for_status()  # Raise error for non-200 status
+    response.raise_for_status() 
     data = response.json()
     
     if "items" in data and len(data["items"]) > 0:

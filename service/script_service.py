@@ -48,33 +48,31 @@ def analyze_transcript_style(transcript: str):
     - Tone:
 
     """
-
+    
     try:
-        model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
         response = model.generate_content(analysis_prompt)
 
         if response and response.text:
-            style = ""
-            tone = ""
-            lines = response.text.splitlines()
-            logger.info(f"Received response: {lines}")
+            style = "Unknown"
+            tone = "Unknown"
+            lines = [line.strip("- ").strip() for line in response.text.splitlines() if line.strip()]
 
             for line in lines:
                 if line.lower().startswith("style:"):
                     style = line.split(":", 1)[1].strip()
-                    logger.info(f"Extracted Style: {style}")
-                if line.lower().startswith("tone:"):
+                elif line.lower().startswith("tone:"):
                     tone = line.split(":", 1)[1].strip()
-                    logger.info(f"Extracted Tone: {tone}")
-            return {"tone": tone, "style": style}
 
+            logger.info(f"Extracted Style: {style} | Tone: {tone}")
+            return {"tone": tone, "style": style}
         else:
-            logger.warning("Response text from the model is empty or malformed.")
+            logger.warning("Empty or malformed model response.")
             return {"tone": "Casual", "style": "Casual"}
 
     except Exception as e:
         logger.error(f"Error analyzing transcript style: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to analyze transcript style due to an internal error.")
+        raise HTTPException(status_code=500, detail="Failed to analyze transcript style.")
 
 def generate_script(document_content: str, style: str, tone: str, mode: str = "Short-form"):
     """
