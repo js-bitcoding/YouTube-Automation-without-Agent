@@ -164,14 +164,13 @@ def save_video(
         return {"message": "Video saved successfully!", "video_id": video_id}
 
     except HTTPException as e:
-
-        print(f"HTTP Exception occurred: {e.detail}")
+        raise
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail="An internal server error occurred")
 
-@router.get("/video/saved/")
+@router.get("/video/save/saved")
 def get_saved_videos(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Retrieve all non-deleted saved videos for the current user."""
     try:

@@ -3,6 +3,12 @@ from fastapi import Form,Body
 from typing import Optional, List, Union
 from pydantic import BaseModel, Field, EmailStr
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email_id: Optional[EmailStr] = None
+    password: Optional[str] = None
+    old_password: Optional[str] = None
+    
 class UserRegister(BaseModel):
     username: str 
     password: str 

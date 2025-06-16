@@ -7,7 +7,7 @@ from functionality.current_user import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query
 from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
 
-sessions_router = APIRouter(prefix="/Session")
+sessions_router = APIRouter(prefix="/session")
 
 @sessions_router.get("/")
 def get_all_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -111,7 +111,6 @@ def get_session_by_id(
     except Exception as e:
         logger.exception(f"Failed to retrieve chat session {session_id} for User ID {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Unable to fetch session.")
-
 
 
 @sessions_router.post("/create/")

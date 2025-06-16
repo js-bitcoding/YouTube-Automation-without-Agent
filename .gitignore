@@ -30,3 +30,4 @@ convert_to_base64.py
 Thumbs.db
 .vscode/
 .idea/
+static/

@@ -167,6 +167,7 @@ def delete_title(
 
         title_entry.is_deleted = True
         db.commit()
+        db.refresh(title_entry)
 
         logger.info(f"Title ID {title_id} soft-deleted successfully for user {user.id}")
         return {"message": "Title marked as deleted."}

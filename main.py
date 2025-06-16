@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from database.db_connection import init_db, engine, Base
 from routes import thumbnail, viral_idea_finder, title_generation, group, chat, project, instructions, admin, sessions, auth, vector_store
@@ -9,11 +10,13 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:8501"], 
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", tags=["Welcome"])
 def startup():

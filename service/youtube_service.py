@@ -202,7 +202,7 @@ def get_published_after(filter_option: str) -> Optional[str]:
              Returns None if the filter option is invalid.
     """
     try:
-        now = timezone
+        now = datetime.utcnow()
 
         if filter_option == "today":
             return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"

@@ -26,124 +26,83 @@ ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text")
 
 persist_dir = "./chroma_db"
 
-@group_router.post("/create_empty/")
-async def create_empty_group(
-    project_id: str = Query(...),
-    name: str = Form("Untitled Group"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Creates an empty group for a project, associated with the current user.
+# @group_router.post("/create_empty/")
+# async def create_empty_group(
+#     project_id: str = Query(...),
+#     name: str = Form("Untitled Group"),
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Creates an empty group for a project, associated with the current user.
 
-    Args:
-        project_id (int): ID of the project the group is associated with.
-        name (str): Name of the new group (defaults to "Untitled Group").
-        db (Session): SQLAlchemy DB session.
-        current_user (User): Authenticated user.
+#     Args:
+#         project_id (int): ID of the project the group is associated with.
+#         name (str): Name of the new group (defaults to "Untitled Group").
+#         db (Session): SQLAlchemy DB session.
+#         current_user (User): Authenticated user.
 
-    Returns:
-        dict: Confirmation message and details of the newly created group.
-    """
-    try:
-        if project_id.strip().lower() == "string" or not project_id.strip():
-            raise HTTPException(status_code=400, detail="❌ project_id cannot be empty or 'string'.")
+#     Returns:
+#         dict: Confirmation message and details of the newly created group.
+#     """
+#     try:
+#         if project_id.strip().lower() == "string" or not project_id.strip():
+#             raise HTTPException(status_code=400, detail="❌ project_id cannot be empty or 'string'.")
 
-        try:
-            project_id = int(project_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="❌ project_id must be a valid integer.")
+#         try:
+#             project_id = int(project_id)
+#         except ValueError:
+#             raise HTTPException(status_code=400, detail="❌ project_id must be a valid integer.")
 
-        if name.strip().lower() == "string" or not name.strip():
-            raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
+#         if name.strip().lower() == "string" or not name.strip():
+#             raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
 
-        logger.info(f"Creating empty group for project ID {project_id} by user {current_user.id}")
+#         logger.info(f"Creating empty group for project ID {project_id} by user {current_user.id}")
 
-        project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
-        if not project:
-            logger.warning(f"Project with ID {project_id} not found for user {current_user.id}")
-            raise HTTPException(status_code=400, detail="Project not found.")
-        existing_group = db.query(Group).filter(
-        Group.project_id == project_id,
-        Group.name == name, 
-        Group.is_deleted == False  # optional: if soft delete is implemented
-        ).first()
+#         project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
+#         if not project:
+#             logger.warning(f"Project with ID {project_id} not found for user {current_user.id}")
+#             raise HTTPException(status_code=400, detail="Project not found.")
+#         existing_group = db.query(Group).filter(
+#         Group.project_id == project_id,
+#         Group.name == name, 
+#         Group.is_deleted == False  
+#         ).first()
 
-        if existing_group:
-            raise HTTPException(
-        status_code=400,
-        detail=f"A group with the name '{name}' already exists in this project."
-    )
-        new_group = Group(
-            name=name,
-            user_id=current_user.id,
-            project_id=project_id,
-            created_time=datetime.datetime.now()
-        )
+#         if existing_group:
+#             raise HTTPException(
+#         status_code=400,
+#         detail=f"A group with the name '{name}' already exists in this project."
+#     )
+#         new_group = Group(
+#             name=name,
+#             user_id=current_user.id,
+#             project_id=project_id,
+#             created_time=datetime.datetime.now()
+#         )
 
-        db.add(new_group)
-        db.commit()
-        db.refresh(new_group)
+#         db.add(new_group)
+#         db.commit()
+#         db.refresh(new_group)
 
-        logger.info(f"Group {new_group.id} created successfully")
-        return JSONResponse(content={
-            "message": "Empty group created successfully.",
-            "group_id": new_group.id,
-            "name": new_group.name,
-            "created_time": new_group.created_time.isoformat()
-        })
+#         logger.info(f"Group {new_group.id} created successfully")
+#         return JSONResponse(content={
+#             "message": "Empty group created successfully.",
+#             "group_id": new_group.id,
+#             "name": new_group.name,
+#             "created_time": new_group.created_time.isoformat()
+#         })
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error while creating group for project ID {project_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Unexpected error while creating group for project ID {project_id}: {e}")
-
-@group_router.put("/{group_id}/")
-def update_group_api(
-    group_id: int, 
-    group_name: str = Query(...), 
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
-    ):
-    """
-    Updates a group's name for the specified group ID.
-
-    Args:
-        group_id (str): ID of the group to update (as string to allow validation).
-        name (str): New name for the group.
-        db (Session): SQLAlchemy DB session.
-        current_user (User): Authenticated user.
-
-    Returns:
-        Group: The updated group details.
-
-    Raises:
-        HTTPException: If the user is unauthorized or input is invalid.
-    """
-    try:
-        if group_name.strip().lower() == "string" or not group_name.strip():
-            raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
-
-        logger.info(f"User {current_user.id} is updating group {group_id} with name '{group_name}'")
-
-        group = update_group(db, group_id, group_name.strip(), current_user.id)
-        if not group:
-            logger.warning(f"Unauthorized update attempt for group {group_id} by user {current_user.id}")
-            raise HTTPException(status_code=403, detail="You are not authorized to update this group")
-
-        logger.info(f"Group {group_id} updated successfully by user {current_user.id}")
-        return group
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error while updating group {group_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Unexpected error while updating group {group_id}: {e}")
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.exception(f"Unexpected error while creating group for project ID {project_id}: {e}")
+#         raise HTTPException(status_code=500, detail=f"Unexpected error while creating group for project ID {project_id}: {e}")
 
 @group_router.post("/create-content")
 async def create_group_content(
     project_id: int,
+    name: str = Form("Untitle Group"),
     files: List[UploadFile] = File(None),
     youtube_links: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
@@ -164,20 +123,34 @@ async def create_group_content(
     """
 
     try:
-        project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+            Project.is_deleted == False
+        ).first()
         if not project:
             logger.warning(f"Project with ID {project_id} not found for user {current_user.id}")
             raise HTTPException(status_code=400, detail="Project not found.")
-       
+
+        existing_group = db.query(Group).filter(
+            Group.project_id == project_id,
+            Group.name == name,  
+            Group.is_deleted == False  
+        ).first()
+
+        if existing_group:
+            raise HTTPException(status_code=400, detail=f"A group with the name '{name}' already exists for this project.")
+        
         new_group = Group(
-            name=f"Group for {current_user.username}",
+            name=name,
             project_id=project_id,
-            user_id=current_user.id
+            user_id=current_user.id,
+            created_time=datetime.datetime.now()
         )
+        
         db.add(new_group)
         db.commit()
         db.refresh(new_group)
-
         group_id = new_group.id
 
        
@@ -197,7 +170,7 @@ async def create_group_content(
 
         if not document_texts and not youtube_transcripts:
             logger.warning("No content found to embed into ChromaDB.")
-            raise HTTPException(status_code=400, detail="❌ No content available for ChromaDB storage.")
+            raise HTTPException(status_code=400, detail="❌ Please provide at least one document or YouTube link.")
 
         collection_name = f"project_{project_id}_group_{group_id}"
 
@@ -241,7 +214,62 @@ async def create_group_content(
     except Exception as e:
         logger.exception(f"Unexpected error creating group content for project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating group content: {e}")
+    
+@group_router.put("/{group_id}/")
+def update_group_api(
+    group_id: int, 
+    group_name: str = Query(...), 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates a group's name for the specified group ID, ensuring no duplicates.
 
+    Args:
+        group_id (int): ID of the group to update.
+        group_name (str): New name for the group.
+        db (Session): SQLAlchemy DB session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        Group: The updated group details.
+
+    Raises:
+        HTTPException: If the user is unauthorized, group name is invalid, or the name is already in use.
+    """
+    try:
+       
+        if group_name.strip().lower() == "string" or not group_name.strip():
+            raise HTTPException(status_code=400, detail="❌ Group name cannot be empty.")
+
+    
+        existing_group = db.query(Group).filter(
+            Group.user_id == current_user.id,
+            Group.name == group_name.strip(),
+            Group.id != group_id,  
+            Group.is_deleted == False
+        ).first()
+
+        if existing_group:
+            logger.warning(f"Duplicate group name '{group_name}' found for user {current_user.id}.")
+            raise HTTPException(status_code=400, detail="❌ Group name already exists.")
+
+        logger.info(f"User {current_user.id} is updating group {group_id} with name '{group_name}'")
+
+        # Proceed with the group update
+        group = update_group(db, group_id, group_name.strip(), current_user.id)
+        if not group:
+            logger.warning(f"Unauthorized update attempt for group {group_id} by user {current_user.id}")
+            raise HTTPException(status_code=403, detail="You are not authorized to update this group")
+
+        logger.info(f"Group {group_id} updated successfully by user {current_user.id}")
+        return group
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error while updating group {group_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error while updating group {group_id}: {e}")
 
 @group_router.put("/update-content")
 async def update_group_content(
@@ -301,6 +329,12 @@ async def update_group_content(
         except Exception as e:
             logger.error(f"Error deleting old data from ChromaDB: {str(e)}")
 
+        if not document_ids and not youtube_ids:
+            raise HTTPException(
+        status_code=400,
+        detail="❌ Please provide at least one of 'document_ids' or 'youtube_ids'."
+    )
+
         results = await update_groups_content(
             group_id=group_id,
             files=valid_files,
@@ -346,7 +380,7 @@ async def update_group_content(
                     "group_id": group_id,
                     "project_id": project_id,
                     "youtube_id": youtube_id,  
-                    "formatted": f"Formatted video content for group {group_id}",
+                    "formatted": "",
                     "documents": [transcript],
                     "document_sources": [],
                     "video_sources": [{"id": youtube_id, "youtube_video_id": youtube_url}],
@@ -361,133 +395,6 @@ async def update_group_content(
     except Exception as e:
         logger.exception(f"Unexpected error updating group content for group {group_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating group content: {e}")
-
-
-@group_router.delete("/delete-content")
-async def delete_group_content(
-    project_id: int = Query(...),
-    group_id: int = Query(...),
-    document_ids: List[int] = Query(default=[]),
-    youtube_video_ids: List[int] = Query(default=[]),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Deletes specified documents and YouTube videos from a group under a project.
-
-    Args:
-        project_id (int): ID of the project the group belongs to.
-        group_id (int): ID of the group from which content is being deleted.
-        document_ids (List[int]): List of document IDs to delete.
-        youtube_video_ids (List[int]): List of YouTube video IDs to delete.
-        db (Session): SQLAlchemy DB session.
-        current_user (User): Authenticated user.
-
-    Returns:
-        dict: Contains lists of deleted document IDs, deleted video IDs, and any errors encountered.
-
-    Raises:
-        HTTPException: If project or group is not found, or if no valid content IDs are provided.
-    """
-    logger.info(f"Deleting content from group {group_id} by user {current_user.id}")
-    results = {"documents_deleted": [], "videos_deleted": [], "errors": []}
-
-    try:
-        project = db.query(Project).filter(
-            Project.id == project_id, 
-            Project.user_id == current_user.id,
-            Project.is_deleted == False
-        ).first()
-
-        if not project:
-            logger.error(f"Project {project_id} not found or has been deleted for user {current_user.id}")
-            raise HTTPException(status_code=400, detail="Project not found or has been deleted.")
-
-        group = db.query(Group).filter(
-            Group.id == group_id,
-            Group.project_id == project_id,
-            Group.is_deleted == False
-        ).first()
-
-        if not group:
-            logger.warning(f"Group {group_id} not found during delete-content")
-            raise HTTPException(status_code=404, detail="Group not found.")
-
-        if document_ids:
-            documents = db.query(Document).filter(
-                Document.id.in_(document_ids),
-                Document.group_id == group_id,
-                Document.is_deleted == False
-            ).all()
-            for doc in documents:
-                try:
-                    doc.is_deleted = True
-                    results["documents_deleted"].append(doc.id)
-                except Exception as e:
-                    logger.exception(f"Error deleting document ID {doc.id}: {e}")
-                    results["errors"].append(f"Document ID {doc.id}: {str(e)}")
-            db.commit()
-
-        if youtube_video_ids:
-            videos = db.query(YouTubeVideo).filter(
-                YouTubeVideo.id.in_(youtube_video_ids),
-                YouTubeVideo.group_id == group_id,
-                YouTubeVideo.is_deleted == False
-            ).all()
-            for vid in videos:
-                try:
-                    vid.is_deleted = True
-                    results["videos_deleted"].append(vid.id)
-                except Exception as e:
-                    logger.exception(f"Error deleting video ID {vid.id}: {e}")
-                    results["errors"].append(f"Video ID {vid.id}: {str(e)}")
-            db.commit()
-
-        if not results["documents_deleted"] and not results["videos_deleted"]:
-            logger.warning("No valid document or video IDs found for deletion")
-            raise HTTPException(status_code=400, detail="No valid document or video IDs provided.")
-
-        logger.info(f"Deleted content result for group {group_id}: {results}")
-        return JSONResponse(content=results)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error during delete-content: {e}")
-        raise HTTPException(status_code=500, detail="Failed during content deletion.")
-
-@group_router.delete("/{group_id}/")
-def delete_group_api(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """
-    Deletes a group after validating user permissions.
-
-    Args:
-        group_id (int): ID of the group to delete.
-        db (Session): SQLAlchemy DB session.
-        current_user (User): Authenticated user.
-
-    Returns:
-        dict: Confirmation message indicating successful deletion.
-
-    Raises:
-        HTTPException: If the group is not found, or the user is unauthorized.
-    """
-    logger.info(f"User {current_user.id} requesting delete for group {group_id}")
-
-    try:
-        group = delete_group(db, group_id, current_user.id)
-        if not group:
-            logger.warning(f"Group {group_id} not found or unauthorized deletion attempt by user {current_user.id}")
-            raise HTTPException(status_code=403, detail="Group not found or you are not authorized to delete it.")
-
-        logger.info(f"Group {group_id} deleted successfully by user {current_user.id}")
-        return {"message": "✅ Group deleted successfully."}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error deleting group {group_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed while deleting the group.")
 
 @group_router.get("/")
 def get_user_groups_with_content_api(
@@ -553,14 +460,137 @@ def get_user_group_with_content_api(
             logger.warning(f"Group {group_id} not found for user {current_user.id} or unauthorized access.")
             raise HTTPException(status_code=404, detail="Group not found or unauthorized access.")
 
+      
+        for document in content['documents']:
+          
+            merged_content = " ".join([chunk['content'] for chunk in document['chroma_content']])
+            document['content'] = merged_content  
+
+           
+            document.pop('chroma_content', None)
+
         logger.info(f"Successfully retrieved content for group {group_id} for user {current_user.id}.")
         return {"group": content}
+    
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Error occurred while fetching content for group {group_id} by user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving the group content.")
     
+@group_router.delete("/delete-content")
+async def delete_group_content(
+    project_id: int = Query(...),
+    group_id: int = Query(...),
+    document_ids: List[int] = Query(default=[]),
+    youtube_video_ids: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Deletes specified documents and YouTube videos from a group under a project,
+    applying soft delete in PostgreSQL and deleting vector data in ChromaDB.
+    """
+    logger.info(f"Deleting content from group {group_id} by user {current_user.id}")
+    results = {"documents_deleted": [], "videos_deleted": [], "errors": []}
+
+    try:
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+            Project.is_deleted == False
+        ).first()
+
+        if not project:
+            logger.error(f"Project {project_id} not found or has been deleted for user {current_user.id}")
+            raise HTTPException(status_code=400, detail="Project not found or has been deleted.")
+
+        group = db.query(Group).filter(
+            Group.id == group_id,
+            Group.project_id == project_id,
+            Group.is_deleted == False
+        ).first()
+
+        if not group:
+            logger.warning(f"Group {group_id} not found during delete-content")
+            raise HTTPException(status_code=404, detail="Group not found.")
+
+
+        collection_name = f"project_{project_id}_group_{group_id}"
+        collection = None
+        try:
+            collection = chroma_client.get_collection(name=collection_name)
+        except Exception as e:
+            logger.error(f"ChromaDB: Could not retrieve collection {collection_name}: {e}")
+
+
+        if document_ids:
+            documents = db.query(Document).filter(
+                Document.id.in_(document_ids),
+                Document.group_id == group_id,
+                Document.is_deleted == False
+            ).all()
+
+            for doc in documents:
+                try:
+                    doc.is_deleted = False
+                    results["documents_deleted"].append(doc.id)
+
+                   
+                    if collection:
+                        collection.delete(where={
+                                    "$and": [
+                                    {"group_id": group_id},
+                                    {"document_id": doc.id}
+                                    ]
+                                    })
+
+                        logger.info(f"🗑️ Deleted ChromaDB vector for document ID {doc.id}")
+                except Exception as e:
+                    logger.exception(f"Error deleting document ID {doc.id}: {e}")
+                    results["errors"].append(f"Document ID {doc.id}: {str(e)}")
+            db.commit()
+
+        if youtube_video_ids:
+            videos = db.query(YouTubeVideo).filter(
+                YouTubeVideo.id.in_(youtube_video_ids),
+                YouTubeVideo.group_id == group_id,
+                YouTubeVideo.is_deleted == False
+            ).all()
+            for vid in videos:
+                try:
+                    vid.is_deleted = False
+                    results["videos_deleted"].append(vid.id)
+
+                    if collection:
+                        collection.delete(where={
+                                "$and": [
+                                {"group_id": group_id},
+                                {"youtube_id": vid.id}
+                            ]
+                        })
+
+                        logger.info(f"🗑️ Deleted ChromaDB vector for YouTube ID {vid.id}")
+                except Exception as e:
+                    logger.exception(f"Error deleting video ID {vid.id}: {e}")
+                    results["errors"].append(f"Video ID {vid.id}: {str(e)}")
+            db.commit()
+
+        if not results["documents_deleted"] and not results["videos_deleted"]:
+            logger.warning("No valid document or video IDs found for deletion")
+            raise HTTPException(status_code=400, detail="No valid document or video IDs provided.")
+        
+        results["message"] = "Content deleted successfully."
+
+        logger.info(f"Deleted content result for group {group_id}: {results}")
+        return JSONResponse(content=results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error during delete-content: {e}")
+        raise HTTPException(status_code=500, detail="Failed during content deletion.")
+
 @group_router.delete("/soft-delete-group-content/{group_id}")
 async def soft_delete_group_content(
     group_id: int,
@@ -568,7 +598,7 @@ async def soft_delete_group_content(
     current_user: User = Depends(get_current_user)
 ) -> dict:
     try:
-        # Validate the group belongs to the current user and is not already deleted
+       
         group = db.query(Group).filter(
             Group.id == group_id,
             Group.user_id == current_user.id,
@@ -581,7 +611,7 @@ async def soft_delete_group_content(
         project_id = group.project_id
         collection_name = f"project_{project_id}_group_{group_id}"
 
-        # ChromaDB soft-delete
+       
         vectorstore = Chroma(
             persist_directory=persist_dir,
             collection_name=collection_name,
@@ -636,3 +666,4 @@ async def soft_delete_group_content(
         db.rollback()
         logger.error(f"🚨 Error during soft deletion: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to soft-delete group content.")
+    

@@ -626,7 +626,7 @@ def get_user_groups_with_content(user_id: int, db: Session):
 
 def get_user_group_with_content_by_id(group_id: int, user_id: int, db: Session):
     """
-    Retrieves a specific group by its ID for a user along with associated documents and videos.
+    Retrieves a specific group by its ID for a user along with associated documents and videos and ChromaDB content.
 
     Args:
         group_id (int): The ID of the group to retrieve.
@@ -634,7 +634,7 @@ def get_user_group_with_content_by_id(group_id: int, user_id: int, db: Session):
         db (Session): The database session.
 
     Returns:
-        dict: A dictionary containing the group's details, documents, and videos.
+        dict: A dictionary containing the group's details, documents, and videos, including ChromaDB content.
 
     Raises:
         HTTPException: If the group is not found for the user.
@@ -649,30 +649,63 @@ def get_user_group_with_content_by_id(group_id: int, user_id: int, db: Session):
         if not group:
             raise HTTPException(status_code=404, detail="Group not found.")
 
-        documents = db.query(Document).filter(Document.group_id == group.id).all()
-        videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group.id).all()
+        documents = db.query(Document).filter(Document.group_id == group.id,Document.is_deleted == False).all()
+        videos = db.query(YouTubeVideo).filter(YouTubeVideo.group_id == group.id,YouTubeVideo.is_deleted == False).all()
 
-        return {
+        
+        chroma_docs_response = fetch_all_chroma_documents(group.project_id, group.id)
+        chroma_documents = chroma_docs_response.get("documents", [])
+        youtube_transcripts = chroma_docs_response.get("youtube_transcripts", [])
+
+        group_content = {
             "group_id": group.id,
             "group_name": group.name,
             "project_id": group.project_id,
             "documents": [
                 {
-                    "document id": doc.id,
+                    "document_id": doc.id,
                     "filename": doc.filename,
-                    "content_snippet": doc.content
+                   
+                    "content": " ".join(
+                        [chunk["content"] for chunk in chroma_documents if chunk.get("document_id") == doc.id]
+                    ),
+                    "tone": doc.tone,
+                    "style": doc.style,
+                    "chroma_content": [
+                        {
+                            "content": chunk["content"],
+                            "document_id": chunk.get("document_id")
+                        }
+                        for chunk in chroma_documents if chunk.get("document_id") == doc.id
+                    ]
                 } for doc in documents
             ],
             "videos": [
                 {
-                    "videos id": vid.id,
+                    "video_id": vid.id,
                     "video_url": vid.url,
-                    "transcript_excerpt": vid.transcript,
+                    # "transcript_excerpt": vid.transcript if hasattr(vid, 'transcript') else None, 
                     "tone": vid.tone,
-                    "style": vid.style
+                    "style": vid.style,
+                    "content":" ".join([transcript["content"] for transcript in youtube_transcripts if transcript.get("youtube_id")==vid.id]),
+                    "chroma_transcripts": [
+                        {
+                            "content": transcript["content"],
+                            "youtube_id": transcript.get("youtube_id")
+                        }
+                        for transcript in youtube_transcripts if transcript.get("youtube_id") == vid.id
+                    ]
                 } for vid in videos
             ]
         }
+
+        for document in group_content['documents']:
+            document.pop('content_snippet', None)
+
+        return group_content
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error retrieving group with ID {group_id} for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving group.")

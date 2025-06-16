@@ -1,8 +1,12 @@
+import os
+import whisper  
+import tempfile
+from typing import Optional
 from utils.logging_utils import logger
 from database.db_connection import get_db
 from sqlalchemy.orm import Session,joinedload
-from fastapi import APIRouter, Depends ,HTTPException
 from functionality.current_user import get_current_user
+from fastapi import APIRouter, Depends ,HTTPException,UploadFile, File, Form
 from service.chat_ai_agent_service import generate_response_for_conversation
 from database.models import User, Group, ChatConversation, ChatSession, chat_session_group,Instruction
 
@@ -262,3 +266,43 @@ def generate_group_response(
     except Exception as e:
         logger.exception(f"Error generating response for Conversation ID {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating response for Conversation ID {conversation_id}: {e}")
+    
+# @chat_router.delete("/delete/{conversation_id}/")
+# def delete_conversation(
+#     conversation_id: int,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     logger.info(f"[DELETE] Request to delete conversation ID: {conversation_id} by user: {current_user.id}")
+
+#     convo = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
+#     if not convo:
+#         logger.warning(f"Conversation ID {conversation_id} not found")
+#         raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
+
+#     logger.info(f"Conversation {convo.id} found. Checking session...")
+
+#     session = db.query(ChatSession).filter(ChatSession.id == convo.session_id).first()
+#     if not session:
+#         logger.warning(f"Session not found for conversation {convo.id}")
+#         raise HTTPException(status_code=404, detail="Associated chat session not found")
+
+#     logger.info(f"Found session {session.id}, checking group access...")
+
+#     group = db.query(Group)\
+#         .join(chat_session_group)\
+#         .filter(
+#             chat_session_group.c.chat_session_id == session.id,
+#             Group.user_id == current_user.id
+#         ).first()
+
+#     if not group:
+#         logger.warning(f"User {current_user.id} does not have access to conversation {conversation_id}")
+#         raise HTTPException(status_code=403, detail="You do not have access to delete this conversation")
+
+#     logger.info(f"User {current_user.id} authorized to delete conversation {conversation_id}")
+
+#     convo.is_deleted = True
+#     db.commit()
+
+#     return {"message": f"Conversation {conversation_id} deleted"}

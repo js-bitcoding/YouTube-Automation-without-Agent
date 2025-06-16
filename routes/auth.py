@@ -7,11 +7,11 @@ from passlib.context import CryptContext
 from database.db_connection import get_db
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi.responses import JSONResponse
-from database.models import User, UserLoginHistory, timezone
-from database.schemas import UserLogin,UserRegister
 from functionality.jwt_token import create_jwt_token
 from fastapi import APIRouter, Depends, HTTPException
 from functionality.current_user import get_current_user
+from database.models import User, UserLoginHistory, timezone
+from database.schemas import UserLogin,UserRegister,UserUpdate
 
 router = APIRouter()
 security = HTTPBearer()
@@ -125,6 +125,65 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     except Exception as e:
         logger.exception(f"Unexpected error during login. {e}")
         raise HTTPException(status_code=500, detail="Password or Username Must be Valid")
+
+@router.put("/update_profile")
+def update_profile(
+    user_data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Allows the current user to update their profile, verifying the old password before password changes.
+
+    Args:
+        user_data (UserUpdate): The profile update payload.
+        current_user (User): Authenticated user.
+        db (Session): Database session.
+
+    Returns:
+        JSONResponse: A success or failure message.
+    """
+    try:
+        logger.info(f"User {current_user.username} is updating their profile.")
+
+        # Username change
+        if user_data.username and user_data.username != current_user.username:
+            if db.query(User).filter(User.username == user_data.username, User.is_deleted == False).first():
+                raise HTTPException(status_code=400, detail="❌ Username already taken.")
+            current_user.username = user_data.username
+
+        # Email change
+        if user_data.email_id and user_data.email_id != current_user.email_id:
+            if db.query(User).filter(User.email_id == user_data.email_id, User.is_deleted == False).first():
+                raise HTTPException(status_code=400, detail="❌ Email already in use.")
+            current_user.email_id = user_data.email_id
+
+        # Password change
+        if user_data.password:
+            if not user_data.old_password:
+                raise HTTPException(status_code=400, detail="⚠️ Old password is required to change password.")
+
+            if not pwd_context.verify(user_data.old_password, current_user.password):
+                raise HTTPException(status_code=400, detail="❌ Old password is incorrect.")
+
+            if user_data.password.strip().lower() == "string" or not user_data.password.strip():
+                raise HTTPException(status_code=400, detail="❌ New password cannot be empty.")
+
+            current_user.password = pwd_context.hash(user_data.password)
+
+        db.commit()
+        db.refresh(current_user)
+
+        logger.info(f"User {current_user.username} updated their profile successfully.")
+        return JSONResponse(status_code=200, content={"message": "✅ Profile updated successfully!"})
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.exception(f"Profile update failed due to DB error. {e}")
+        raise HTTPException(status_code=500, detail="⚠️ Failed to update profile due to server error.")
+    except Exception as e:
+        logger.exception("Unexpected error during profile update.")
+        raise HTTPException(status_code=500, detail=f"Unexpected error occurred. {e}")
 
 
 @router.post("/logout")
